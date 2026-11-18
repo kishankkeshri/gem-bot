@@ -19,7 +19,14 @@ FILL = {"GREEN": "C6EFCE", "AMBER": "FFEB9C", "RED": "FFC7CE"}
 
 def item(b: dict) -> str:
     s = b["f"]("item") or b["row"]["title"]
-    return re.split(r"\s*GeMARPTS", s)[0].strip()
+    s = re.split(r"\s*GeMARPTS", s)[0].strip()
+    parts, seen = [], set()
+    for part in s.split(";"):  # "as per scope of work; as per scope of work; ..." -> once
+        k = part.strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            parts.append(part.strip())
+    return "; ".join(parts)
 
 
 def rupees(s) -> str:

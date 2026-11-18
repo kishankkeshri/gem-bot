@@ -100,7 +100,7 @@ def rate(facts: dict, row: dict, entity: dict, today: date, closing_days: int = 
     emd_req = _v(facts, "emd_required")
     if read_doc and not (emd_req or emd_amt or _v(facts, "emd_exempt")):
         actions.append("EMD not stated - confirm in document")
-    if emd_req == "No" or _v(facts, "emd_exempt"):
+    if not emd_amt and (emd_req == "No" or _v(facts, "emd_exempt")):
         reasons.append("No EMD")
     elif emd_amt:
         exempt = entity.get("mse") and (kind == "services" or entity.get("role_for_goods") == "manufacturer")

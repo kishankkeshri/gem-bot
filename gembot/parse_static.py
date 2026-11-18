@@ -57,6 +57,8 @@ def _parse_gem(p: list[str]) -> dict:
         "doc_format": {"value": "GeM bid", "page": 1, "quote": ""},
         "bid_number": _find(p, r"Bid Number\s*:?\s*(GEM/\d{4}/[BR]/\d+)"),
         "end_date": _find(p, r"Bid End Date/Time\s*(\d{2}-\d{2}-\d{4}(?: \d{2}:\d{2}:\d{2})?)"),
+        "opening_date": _find(p, r"Bid Opening\s*Date/Time\s*(\d{2}-\d{2}-\d{4}(?: \d{2}:\d{2}:\d{2})?)"),
+        "start_date": _find(p, r"Dated\s*:\s*(\d{2}-\d{2}-\d{4})"),
         "ministry": _find(p, r"Ministry/State Name\s*(.+?)\s*/\s*Department Name"),
         "org": _find(p, r"Organisation Name\s*(.+?)\s*/\s*Office Name"),
         "qty": _find(p, r"Total Quantity\s*([\d,]+)"),
@@ -84,6 +86,8 @@ def _parse_gem(p: list[str]) -> dict:
         f["consignee_pin"] = dict(c, value=m.group(1))
         f["consignee"] = dict(c, value=m.group(2).strip())
         f["delivery_days"] = dict(c, value=m.group(4))
+    if f.get("emd"):  # an amount means EMD applies, whatever a loose "Required No" matched
+        f["emd_required"] = dict(f["emd"], value="Yes")
     if f.get("docs_required") and re.search(r"OEM Authori[sz]ation", f["docs_required"]["value"], re.I):
         f["oem_auth_required"] = dict(f["docs_required"], value=True)
     return f
@@ -93,7 +97,8 @@ def _parse_rfq(p: list[str]) -> dict:
     f = {
         "doc_format": {"value": "Institute RFQ", "page": 1, "quote": ""},
         "item": _find(p, r"Subject\s*:\s*(.+?)(?=\s+(?:Sir|Dear|Madam)\b)"),
-        "end_date": _find(p, r"(?:latest by|last date[^.]{0,30}?)\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4})"),
+        "end_date": _find(p, r"(?:latest by|last date[^.]{0,30}?|submission deadline\s*:?)\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4})"),
+        "opening_date": _find(p, r"(?:opening of (?:the )?tenders?|tender opening)[^.]{0,20}?\s(\d{1,2}[./-]\d{1,2}[./-]\d{4})"),
         "emd": _find(p, r"EMD[^.]{0,120}?Rs\.?\s*([\d,]+)"),
         "emd_exempt": _has(p, r"EMD[^.]{0,60}(?:not required|exempt|nil)"),
         "epbg_pct": _find(p, r"[Pp]erformance [Ss]ecurity.{0,200}?\(?(\d+(?:\.\d+)?)\s*%"),
@@ -115,5 +120,7 @@ def _common(p: list[str]) -> dict:
         "software_licence": _has(p, r"software licen[cs]e|perpetual licen[cs]e|subscription licen[cs]e|LCA Software|\bsoftware\b.{0,30}licen[cs]e"),
         "it_services": _has(p, r"software development|web portal|mobile app(?:lication)? development|website development|data migration|system integration"),
         "iso_required": _has(p, r"ISO\s*9001"),
+        "emd_mse_exempt_text": _has(p, r"exempt(?:ed|ion)? from (?:submission of |furnishing |payment of )?(?:the )?(?:EMD|Earnest Money|bid security)|EMD exemption"),
+        "local_pref_signals": _has(p, r"Class[- ]?I local supplier|local supplier|Make in India|preference to (?:the )?local"),
         "experience_signals": _has(p, r"similar (?:work|supply|services?).{0,60}(?:80|50|40)\s*%|past experience"),
     }

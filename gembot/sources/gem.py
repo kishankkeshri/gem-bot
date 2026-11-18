@@ -44,6 +44,13 @@ def _date(ms_or_iso) -> "datetime | None":
         return None
 
 
+def _dump(r) -> None:
+    from pathlib import Path
+    p = Path(__file__).resolve().parents[2] / "data" / "gem_last_response.txt"
+    p.parent.mkdir(exist_ok=True)
+    p.write_text(f"HTTP {r.status_code}\n{dict(r.headers)}\n\n{r.text[:20000]}")
+
+
 def _first(v):
     return v[0] if isinstance(v, list) and v else v
 
@@ -58,8 +65,13 @@ def search(http: PoliteSession, keyword: str, token: str) -> list[dict]:
         r = http.post(f"{BASE}/all-bids-data",
                       data={"payload": json.dumps(payload), "csrf_bd_gem_nk": token},
                       headers={"X-Requested-With": "XMLHttpRequest", "Referer": f"{BASE}/all-bids"})
-        data = r.json()
+        try:
+            data = r.json()
+        except ValueError:
+            _dump(r)
+            raise RuntimeError(f"all-bids-data did not return JSON (HTTP {r.status_code}); saved to data/gem_last_response.txt")
         if data.get("code") != 200:
+            _dump(r)
             raise RuntimeError(f"all-bids-data returned code {data.get('code')}")
         resp = data["response"]["response"]
         docs += resp.get("docs", [])
@@ -73,7 +85,9 @@ def fetch(http: PoliteSession, places: list[str]) -> list[dict]:
     token = _token(http)
     by_id: dict[str, dict] = {}
     for place in places:
-        for d in search(http, place, token):
+        found = search(http, place, token)
+        print(f"[gem] {place}: {len(found)} ongoing bids", flush=True)
+        for d in found:
             if d.get("b_bid_type") not in (1, None):  # 1 = bid; 2/5 = reverse auctions
                 continue
             bid_no = _first(d.get("b_bid_number"))

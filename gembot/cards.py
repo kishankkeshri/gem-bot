@@ -1,0 +1,145 @@
+"""Phone-first Telegram cards: one message per bid, the facts a small bidder decides on, three buttons."""
+from __future__ import annotations
+
+import html
+import time
+from datetime import date
+
+import requests
+
+from gembot.parse_static import inr
+from gembot.report import EMOJI, item, rupees
+
+API = "https://api.telegram.org/bot{token}/{method}"
+
+
+def tg(token: str, method: str, **data) -> dict:
+    files = data.pop("files", None)
+    for attempt in range(3):
+        r = requests.post(API.format(token=token, method=method), data=data, files=files, timeout=60)
+        if r.status_code == 429:  # Telegram flood control: wait what it asks
+            time.sleep(int(r.json().get("parameters", {}).get("retry_after", 5)) + 1)
+            continue
+        r.raise_for_status()
+        return r.json()["result"]
+    raise RuntimeError(f"Telegram {method} kept rate-limiting")
+
+
+def keyboard(sid: str, status: str = "new") -> str:
+    import json
+    watch = "⭐ Watching" if status == "watch" else "⭐ Watch"
+    skip = "⏭ Skipped" if status == "skip" else "⏭ Skip"
+    return json.dumps({"inline_keyboard": [[
+        {"text": watch, "callback_data": f"w:{sid}"},
+        {"text": skip, "callback_data": f"s:{sid}"},
+        {"text": "📄 PDF", "callback_data": f"p:{sid}"},
+    ]]})
+
+
+def _d(s) -> str:
+    """'26-11-2026 11:00:00' -> '26 Nov 11:00'"""
+    if not s:
+        return "?"
+    from datetime import datetime
+    s = str(s)
+    for fmt, out in (("%d-%m-%Y %H:%M:%S", "%d %b %H:%M"), ("%d-%m-%Y", "%d %b"), ("%d.%m.%Y", "%d %b"), ("%d/%m/%Y", "%d %b")):
+        try:
+            return datetime.strptime(s, fmt).strftime(out).replace(" 00:00", "")
+        except ValueError:
+            pass
+    return s
+
+
+def size_line(b: dict) -> str:
+    est = b["f"]("est_value")
+    if est:
+        return f"Est. value {rupees(est)}"
+    e = inr(b["f"]("emd")) if b["f"]("emd") else None
+    if e:  # EMD is usually 2-5% of the bid value
+        return f"≈ bid size {rupees(e / 0.05)} – {rupees(e / 0.02)}"
+    return "size not stated"
+
+
+def emd_exemption(b: dict, entities: dict) -> str:
+    a = b["best"]
+    ent = entities.get(a["entity"], {})
+    if not b["f"]("emd") and (b["f"]("emd_required") == "No" or b["f"]("emd_exempt")):
+        return "✅ no EMD in this bid"
+    if not b["f"]("emd"):
+        return "❔ EMD not stated"
+    if a["kind"] == "services" and ent.get("mse"):
+        return "✅ MSE exemption likely (service bid) – upload Udyam"
+    if ent.get("role_for_goods") == "manufacturer" and ent.get("mse"):
+        return "✅ MSE exemption likely (manufacturer)"
+    note = " (doc mentions exemption – check if traders allowed)" if b["f"]("emd_mse_exempt_text") else ""
+    return f"❌ not for resellers on goods – you pay{note}"
+
+
+def yn(v) -> str:
+    return {"Yes": "✅ Yes", "No": "❌ No"}.get(v or "", "❔ not stated")
+
+
+def card(b: dict, entities: dict, today: date) -> str:
+    a, f = b["best"], b["f"]
+    days = b["days_left"]
+    when = "closes TODAY" if days == 0 else (f"closes in {days} day{'s' if days != 1 else ''}" if days is not None else "end date not stated")
+    if days is not None and days <= 3:
+        when = f"⏰ <b>{when}</b>"
+    ent_name = entities.get(a["entity"], {}).get("name", a["entity"])
+    org = f("org") or b["row"]["org"]
+    place = " ".join(x for x in [f("consignee_pin"), b["row"].get("location")] if x)
+    qty = f" · Qty {f('qty')}" if f("qty") else ""
+
+    L = [f"{EMOJI[a['rating']]} <b>{a['rating']}</b> · {html.escape(ent_name)} · {when}",
+         f"<b>{html.escape(item(b)[:140])}</b>{qty}"]
+    if f("summary"):
+        L.append(f"<i>{html.escape(f('summary')[:260])}</i>")
+    L += [
+        f"🏛 {html.escape(org[:90])}" + (f" · 📍{html.escape(place)}" if place else ""),
+        f"📅 Start {_d(f('start_date'))} · End <b>{_d(f('end_date') or b['end'])}</b> · Opens {_d(f('opening_date'))}",
+        f"💰 EMD <b>{html.escape(rupees(f('emd')) if f('emd') else ('Nil' if f('emd_required') == 'No' else 'not stated'))}</b> · {size_line(b)}",
+        f"🏷 MSE EMD exemption: {emd_exemption(b, entities)}",
+        f"🇮🇳 Local (MII) pref: {yn(f('mii_preference')) if f('mii_preference') else ('ℹ️ mentioned' if f('local_pref_signals') else yn(None))} · MSE pref: {yn(f('mse_preference'))}",
+        f"📋 Exp/turnover relax – MSE: {yn(f('mse_relax'))} · Startup: {yn(f('startup_relax'))}",
+    ]
+    extra = []
+    if f("oem_auth_required"):
+        extra.append("OEM letter needed")
+    if f("turnover_min"):
+        extra.append(f"turnover ≥ {rupees(f('turnover_min'))}")
+    if f("delivery_days"):
+        extra.append(f"delivery {f('delivery_days')} days")
+    if f("epbg_pct"):
+        extra.append(f"PBG {f('epbg_pct')}%")
+    if extra:
+        L.append("📌 " + " · ".join(extra))
+    if a["blockers"]:
+        L.append(f"⛔ {html.escape('; '.join(a['blockers'])[:200])}")
+    if a["actions"]:
+        L.append(f"👉 {html.escape(a['actions'][0][:160])}")
+    no = f("bid_number") or b["row"]["external_id"]
+    L.append(f"<code>{html.escape(no)}</code>")
+    return "\n".join(L)
+
+
+def header(bids: list[dict], today: date, failures: list[str], closing_days: int) -> str:
+    c = {k: sum(1 for b in bids if b["best"]["rating"] == k) for k in ("GREEN", "AMBER", "RED")}
+    soon = sum(1 for b in bids if b["days_left"] is not None and b["days_left"] <= closing_days and b["best"]["rating"] != "RED")
+    L = [f"<b>📬 New bids · {today:%d %b %Y}</b>",
+         f"{len(bids)} new · 🟢 {c['GREEN']} · 🟠 {c['AMBER']} · 🔴 {c['RED']}" + (f" · ⏰ {soon} closing soon" if soon else "")]
+    L += [f"⚠️ {html.escape(x[:200])}" for x in failures]
+    if not bids and not failures:
+        L.append("Nothing new today.")
+    return "\n".join(L)
+
+
+def red_list(reds: list[dict]) -> str:
+    L = [f"<b>🔴 Not realistic now ({len(reds)})</b>"]
+    for b in reds[:40]:
+        why = (b["best"]["blockers"] or ["see document"])[0]
+        link = b["row"]["doc_url"]
+        name = html.escape(item(b)[:60])
+        L.append(f"• {f'<a href={chr(34)}{html.escape(link)}{chr(34)}>{name}</a>' if link else name} – {html.escape(why[:90])}")
+    if len(reds) > 40:
+        L.append(f"… and {len(reds) - 40} more")
+    return "\n".join(L)

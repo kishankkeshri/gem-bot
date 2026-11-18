@@ -21,7 +21,7 @@ import warnings
 
 warnings.filterwarnings("ignore", message=".*OpenSSL.*")
 
-from gembot import extract_ai, parse_static, pdf, report, rules  # noqa: E402
+from gembot import cards, extract_ai, parse_static, pdf, report, rules, state  # noqa: E402
 from gembot.http import PoliteSession
 from gembot.sources import gem, iitism  # noqa: E402
 
@@ -51,7 +51,26 @@ def need(name: str) -> str:
     return v
 
 
+class _Tee:
+    """Everything printed also goes to data/last_run.log, so a run can be reviewed afterwards."""
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, s):
+        for st in self.streams:
+            st.write(s)
+            st.flush()
+
+    def flush(self):
+        for st in self.streams:
+            st.flush()
+
+
 def main() -> None:
+    DATA.mkdir(exist_ok=True)
+    log = open(DATA / "last_run.log", "w")
+    sys.stdout = _Tee(sys.__stdout__, log)
+    sys.stderr = _Tee(sys.__stderr__, log)
     ap = argparse.ArgumentParser()
     ap.add_argument("--send", action="store_true")
     ap.add_argument("--all", action="store_true")
@@ -93,6 +112,7 @@ def main() -> None:
             rows = src.fetch(http, geo["places"]) if name == "gem" else src.fetch(http)
             print(f"[{name}] {len(rows)} listings")
         except Exception as e:  # noqa: BLE001 - report, never skip silently
+            traceback.print_exc()
             failures.append(f"{src.NAME}: listing unreachable today ({e.__class__.__name__}: {e})")
             continue
         for row in rows:
@@ -103,6 +123,7 @@ def main() -> None:
                 continue
             if args.limit and len(bids) >= args.limit:
                 break
+            print(f"  [{len(bids) + out_of_region + 1}] {row['external_id']} {row['title'][:50]}", flush=True)
             try:
                 b = analyse(row, http, entities, today, closing_days)
                 if in_region(b["facts"], row, geo):
@@ -117,6 +138,14 @@ def main() -> None:
     if out_of_region:
         print(f"[gem] {out_of_region} keyword hits dropped: consignee outside the region")
     bids = [b for b in bids if b["best"]["rating"] != "SKIP"]
+    seen_numbers, unique = set(), []
+    for b in bids:  # IIT sometimes lists one GeM bid under two tender numbers
+        n = b["f"]("bid_number")
+        if n and n in seen_numbers:
+            continue
+        seen_numbers.add(n)
+        unique.append(b)
+    bids = unique
     bids.sort(key=lambda b: (rules.ORDER[b["best"]["rating"]], b["days_left"] if b["days_left"] is not None else 999))
 
     xlsx = DATA / "reports" / f"bids_{today:%Y-%m-%d}.xlsx"
@@ -126,14 +155,44 @@ def main() -> None:
     print(text, f"\n\nExcel: {xlsx}", sep="")
 
     if args.send:
-        report.send_telegram(need("TELEGRAM_BOT_TOKEN"), need("TELEGRAM_CHAT_ID"), text, xlsx if bids else None)
+        send_cards(bids, entities, today, failures, closing_days)
         print("sent to Telegram")
     DATA.mkdir(exist_ok=True)
     seen_path.write_text(json.dumps(sorted(seen), indent=0))
 
 
+def send_cards(bids: list[dict], entities: list[dict], today: date, failures: list[str], closing_days: int) -> None:
+    import time as _t
+    token, chat = need("TELEGRAM_BOT_TOKEN"), need("TELEGRAM_CHAT_ID")
+    by_id = {e["id"]: e for e in entities}
+    max_cards = int(os.environ.get("MAX_CARDS", "40"))
+    st = state.load()
+    cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML",
+             text=cards.header(bids, today, failures, closing_days))
+    worth = [b for b in bids if b["best"]["rating"] != "RED"]
+    for b in worth[:max_cards]:
+        key = f"{b['row']['source']}:{b['row']['external_id']}"
+        sid = state.short_id(key)
+        prev = st["bids"].get(sid, {})
+        msg = cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML", disable_web_page_preview="true",
+                       text=cards.card(b, by_id, today), reply_markup=cards.keyboard(sid, prev.get("status", "new")))
+        st["bids"][sid] = {"key": key, "title": report.item(b), "org": b["f"]("org") or b["row"]["org"],
+                           "end": b["end"].isoformat() if b["end"] else None, "doc_url": b["row"]["doc_url"],
+                           "pdf": str(b["pdf"]) if b.get("pdf") else None, "rating": b["best"]["rating"],
+                           "status": prev.get("status", "new"), "message_id": msg["message_id"]}
+        _t.sleep(1.1)  # Telegram allows ~1 message/second per chat
+    if len(worth) > max_cards:
+        cards.tg(token, "sendMessage", chat_id=chat, text=f"… {len(worth) - max_cards} more bids not shown (MAX_CARDS={max_cards}).")
+    reds = [b for b in bids if b["best"]["rating"] == "RED"]
+    if reds:
+        cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML", disable_web_page_preview="true",
+                 text=cards.red_list(reds))
+    state.save(st)
+
+
 def analyse(row: dict, http: PoliteSession, entities: list[dict], today: date, closing_days: int) -> dict:
     facts: dict = {}
+    path = None
     if row["doc_url"] and (row["source"] == "gem" or row["doc_url"].lower().split("?")[0].endswith(".pdf")):
         path = DATA / "pdfs" / f"{row['source']}_{row['external_id'].replace('/', '_')}.pdf"
         if not path.exists():
@@ -165,7 +224,7 @@ def analyse(row: dict, http: PoliteSession, entities: list[dict], today: date, c
     evidence = "\n".join(f"{k}{' (AI)' if v.get('by') == 'ai' else ''}: p.{v['page']} {v['quote']}" for k, v in facts.items()
                          if isinstance(v, dict) and v.get("quote") and not k.endswith("_signals"))
     return {
-        "row": row, "facts": facts, "by_entity": by_entity, "best": best, "end": end,
+        "row": row, "facts": facts, "by_entity": by_entity, "pdf": path, "best": best, "end": end,
         "days_left": (end - today).days if end else None, "evidence": evidence[:3000],
         "f": lambda k, _f=facts: (str(_f[k]["value"]) if k in _f and _f[k]["value"] not in (True, None) else
                                   ("Yes" if k in _f and _f[k]["value"] is True else None)),
