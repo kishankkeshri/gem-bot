@@ -1,0 +1,22 @@
+# Copy to config/entities.yaml (gitignored) and describe your own firms.
+# The rules engine reads these facts; nothing about a real firm lives in code.
+entities:
+  - id: A
+    name: Example Traders
+    constitution: proprietorship      # proprietorship | partnership | pvt_ltd | llp
+    udyam: { category: micro, major_activity: services }
+    mse: true
+    dpiit_startup: false
+    role_for_goods: reseller          # reseller | manufacturer
+    nic_codes: [4610, 4649, 4651]
+    past_govt_orders: []              # [{value_inr, completed_on, category}]
+    avg_turnover_3y_inr: 0
+    oem_authorisations: []            # ["OEM name", ...]
+    licences: []                      # e.g. drug_wholesale, petroleum, scrap
+    fits: [goods_supply, installation, services]
+  - id: B
+    name: Example Software Pvt Ltd
+    constitution: pvt_ltd
+    mse: true
+    dpiit_startup: true
+    fits: [software_services, it_amc, data_migration]

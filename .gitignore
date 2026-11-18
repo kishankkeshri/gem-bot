@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+data/
+*.log
+.DS_Store
+
+# Private: real business facts and internal notes stay local
+config/entities.yaml
+PLAN.md
+*.private.*
