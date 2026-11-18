@@ -31,6 +31,7 @@ SOURCES = {"iitism": iitism, "gem": gem}
 # New Gemini calls per run (cached documents are free). GeM PDFs parse well statically,
 # so the budget mostly goes to free-form institute documents.
 AI_BUDGET = int(os.environ.get("AI_MAX_CALLS", "40"))
+REFRESH = False
 
 
 def in_region(facts: dict, row: dict, geo: dict) -> bool:
@@ -79,7 +80,11 @@ def main() -> None:
                     help="run only these sources (default: all)")
     ap.add_argument("--probe", action="store_true",
                     help="GeM: fetch one page for 'Dhanbad', save raw JSON to data/gem_probe.json, exit")
+    ap.add_argument("--refresh", action="store_true",
+                    help="with --send: edit cards already in the chat instead of sending new ones")
     args = ap.parse_args()
+    global REFRESH
+    REFRESH = args.refresh
 
     load_dotenv(ROOT / ".env")
     closing_days = int(os.environ.get("CLOSING_SOON_DAYS", "3"))
@@ -167,15 +172,24 @@ def send_cards(bids: list[dict], entities: list[dict], today: date, failures: li
     by_id = {e["id"]: e for e in entities}
     max_cards = int(os.environ.get("MAX_CARDS", "40"))
     st = state.load()
-    cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML",
-             text=cards.header(bids, today, failures, closing_days))
+    if not REFRESH:
+        cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML",
+                 text=cards.header(bids, today, failures, closing_days))
     worth = [b for b in bids if b["best"]["rating"] != "RED"]
     for b in worth[:max_cards]:
         key = f"{b['row']['source']}:{b['row']['external_id']}"
         sid = state.short_id(key)
         prev = st["bids"].get(sid, {})
-        msg = cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML", disable_web_page_preview="true",
-                       text=cards.card(b, by_id, today), reply_markup=cards.keyboard(sid, prev.get("status", "new")))
+        body = dict(chat_id=chat, parse_mode="HTML", disable_web_page_preview="true",
+                    text=cards.card(b, by_id, today), reply_markup=cards.keyboard(sid, prev.get("status", "new")))
+        if REFRESH and prev.get("message_id"):  # update the card already in the chat instead of a duplicate
+            try:
+                cards.tg(token, "editMessageText", message_id=prev["message_id"], **body)
+            except Exception as e:  # noqa: BLE001 - "message is not modified" is fine
+                print("  edit skipped:", str(e)[:80])
+            msg = {"message_id": prev["message_id"]}
+        else:
+            msg = cards.tg(token, "sendMessage", **body)
         st["bids"][sid] = {"key": key, "title": report.item(b), "org": b["f"]("org") or b["row"]["org"],
                            "end": b["end"].isoformat() if b["end"] else None, "doc_url": b["row"]["doc_url"],
                            "pdf": str(b["pdf"]) if b.get("pdf") else None, "rating": b["best"]["rating"],
@@ -184,7 +198,7 @@ def send_cards(bids: list[dict], entities: list[dict], today: date, failures: li
     if len(worth) > max_cards:
         cards.tg(token, "sendMessage", chat_id=chat, text=f"… {len(worth) - max_cards} more bids not shown (MAX_CARDS={max_cards}).")
     reds = [b for b in bids if b["best"]["rating"] == "RED"]
-    if reds:
+    if reds and not REFRESH:
         cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML", disable_web_page_preview="true",
                  text=cards.red_list(reds))
     state.save(st)
@@ -204,7 +218,9 @@ def analyse(row: dict, http: PoliteSession, entities: list[dict], today: date, c
         facts = parse_static.parse(pages)
         if facts.get("doc_format", {}).get("value") == "Institute RFQ":
             facts.pop("item", None)  # the listing title is more reliable than a guessed subject line
-        cache = DATA / "ai" / (path.stem + ".json")
+        for k, v in parse_static.make_model_from_title(row["title"]).items():
+            facts.setdefault(k, v)
+        cache = DATA / "ai" / (path.stem + ".v2.json")  # v2: adds make/model/key_specs
         global AI_BUDGET
         if extract_ai.enabled() and (cache.exists() or AI_BUDGET > 0):
             AI_BUDGET -= 0 if cache.exists() else 1

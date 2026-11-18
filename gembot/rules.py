@@ -110,11 +110,19 @@ def rate(facts: dict, row: dict, entity: dict, today: date, closing_days: int = 
             actions.append(f"Arrange EMD Rs {emd_amt:,.0f} (resellers get no MSE exemption on goods)")
 
     # ── OEM authorisation ──────────────────────────────────────────────────
-    if _v(facts, "oem_auth_required"):
+    make = _v(facts, "make")
+    if make and str(make).lower() not in ("as per scope of work", "refer annexure", "any"):
+        have = any(str(make).lower() in o.lower() for o in entity.get("oem_authorisations", []))
+        if not have:
+            only = "Only " if _v(facts, "pac") else ""
+            actions.insert(0, f"{only}{make} accepted - get an authorised-dealer letter from {make}")
+    elif _v(facts, "oem_auth_required"):
         if entity.get("oem_authorisations"):
             reasons.append("OEM authorisation on file")
         else:
             actions.append("Get an OEM / authorised-dealer letter for the asked make")
+    if _v(facts, "spec_in_buyer_doc"):
+        actions.append("Specs are in a separate buyer document - open it on GeM before quoting")
 
     # ── turnover & experience ──────────────────────────────────────────────
     relax_ok = (_v(facts, "mse_relax") == "Yes" and entity.get("mse")) or \

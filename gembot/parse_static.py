@@ -86,6 +86,20 @@ def _parse_gem(p: list[str]) -> dict:
         f["consignee_pin"] = dict(c, value=m.group(1))
         f["consignee"] = dict(c, value=m.group(2).strip())
         f["delivery_days"] = dict(c, value=m.group(4))
+    # "Make stag Model supreme3star" - values must be real words, not the empty "Make / Model" header
+    rx_mm = r"\bMake\s+([A-Za-z0-9][^/]{0,40}?)\s+Model\s+([A-Za-z0-9][^/]{0,40}?)\s*(?:/|Technical|\(|$)"
+    mm = _find(p, rx_mm, group=0, flags=0)
+    if mm:
+        m = re.search(rx_mm, mm["value"])
+        f["make"], f["model"] = dict(mm, value=m.group(1)), dict(mm, value=m.group(2))
+    f["pac"] = _has(p, r"PAC Only|Under PAC")  # the PAC *definition* clause is boilerplate in every bid
+    f["spec_in_buyer_doc"] = _has(p, r"Buyer Specification Document Download")
+    f["spec_text"] = (_find(p, r"Bid Requirement \(Allowed Values\)\s*(.+?)\s*(?:/\s*){2,}Consignees")
+                      or _find(p, r"Specification\s*/\s*Values\s*/\s*Core\s*(.+?)\s*/\s*Addon"))
+    f["inspection"] = _find(p, r"Inspection Required[^)]{0,80}\)\s*(Yes|No)")
+    f["ra_enabled"] = _find(p, r"Bid to RA enabled\s*(Yes|No)")
+    f["warranty"] = _find(p, r"Warranty period of the supplied products shall be\s*(\d+\s*years?)") or \
+        _find(p, r"Warranty \(in Year\)\s*([\d, ]+(?:Or higher)?)")
     if f.get("emd"):  # an amount means EMD applies, whatever a loose "Required No" matched
         f["emd_required"] = dict(f["emd"], value="Yes")
     if f.get("docs_required") and re.search(r"OEM Authori[sz]ation", f["docs_required"]["value"], re.I):
@@ -107,8 +121,20 @@ def _parse_rfq(p: list[str]) -> dict:
         "turnover_min": _find(p, r"turnover.{0,150}?(?:Rs\.?\s*)?([\d.,]+\s*(?:lakh|crore))"),
         "est_value": _find(p, r"estimated (?:cost|value)[^.]{0,40}?Rs\.?\s*([\d,]{4,})"),
         "consignee_pin": _find(p, r"Dhanbad\s*[-–]?\s*(826\d{3})"),
+        "warranty": _find(p, r"warranty\s*/?\s*(?:guarantee)?[^.]{0,60}?(\d+\s*(?:years?|months?))"),
+        "spec_text": _find(p, r"Technical Specifications?(?: for [^:]{0,60})?\s*(.{40,400}?)(?=\s(?:Annexure|Price Schedule|$))"),
     }
     return f
+
+
+def make_model_from_title(title: str) -> dict:
+    """Institute listings often say '(Make: Stag, Model: Stag 3-Star ...)'."""
+    out = {}
+    for k in ("make", "model"):
+        m = re.search(rf"\b{k}\s*:\s*([^,;)]+)", title, re.I)
+        if m:
+            out[k] = {"value": m.group(1).strip(), "page": 0, "quote": f"listing title: {title[:80]}"}
+    return out
 
 
 def _common(p: list[str]) -> dict:
@@ -121,6 +147,8 @@ def _common(p: list[str]) -> dict:
         "it_services": _has(p, r"software development|web portal|mobile app(?:lication)? development|website development|data migration|system integration"),
         "iso_required": _has(p, r"ISO\s*9001"),
         "emd_mse_exempt_text": _has(p, r"exempt(?:ed|ion)? from (?:submission of |furnishing |payment of )?(?:the )?(?:EMD|Earnest Money|bid security)|EMD exemption"),
+        "installation": _has(p, r"Supply\s*(?:&|and)\s*Installation|\bSITC\b|installation,? testing and commissioning"),
+        "payment_days": _find(p, r"[Pp]ayment[^.]{0,140}?within\s*(\d+)\s*days"),
         "local_pref_signals": _has(p, r"Class[- ]?I local supplier|local supplier|Make in India|preference to (?:the )?local"),
         "experience_signals": _has(p, r"similar (?:work|supply|services?).{0,60}(?:80|50|40)\s*%|past experience"),
     }

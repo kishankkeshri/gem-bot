@@ -27,11 +27,15 @@ FIELDS = {
     "licences": "licences / registrations the bidder must hold (e.g. FSSAI, electrical contractor licence, drug licence, labour licence), comma separated",
     "delivery_days": "delivery / completion period in days, number only",
     "kind": "one of: goods, services, works",
+    "make": "brand / make the buyer insists on, if a specific one is named",
+    "model": "model the buyer insists on, if named",
+    "key_specs": "the 3-5 specifications a supplier must match to quote (name: value), separated by ' | '",
+    "warranty": "warranty period asked",
 }
 SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        "summary": {"type": "STRING", "description": "Two short lines: what exactly is bought / done, and the key technical requirement."},
+        "summary": {"type": "STRING", "description": "Two short lines for a small supplier: what exactly is bought / done (brand+model if fixed), and the one technical requirement that decides who can quote."},
         "facts": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "field": {"type": "STRING", "enum": list(FIELDS)},
             "value": {"type": "STRING"},

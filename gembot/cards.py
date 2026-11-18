@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import re
 import time
 from datetime import date
 
@@ -75,6 +76,12 @@ def emd_exemption(b: dict, entities: dict) -> str:
     return f"❌ not for resellers on goods – you pay{note}"
 
 
+def _short_specs(s: str, limit: int = 220) -> str:
+    s = re.sub(r"\s*/\s*", " / ", str(s)).replace("STANDARD ", "").strip(" /")
+    s = re.sub(r"(\d+(?:, \d+){4,})", lambda m: ", ".join(m.group(1).split(", ")[:4]) + "…", s)  # long value lists
+    return s if len(s) <= limit else s[:limit].rsplit(" ", 1)[0] + "…"
+
+
 def yn(v) -> str:
     return {"Yes": "✅ Yes", "No": "❌ No"}.get(v or "", "❔ not stated")
 
@@ -102,8 +109,31 @@ def card(b: dict, entities: dict, today: date) -> str:
         f"🇮🇳 Local (MII) pref: {yn(f('mii_preference')) if f('mii_preference') else ('ℹ️ mentioned' if f('local_pref_signals') else yn(None))} · MSE pref: {yn(f('mse_preference'))}",
         f"📋 Exp/turnover relax – MSE: {yn(f('mse_relax'))} · Startup: {yn(f('startup_relax'))}",
     ]
+    make, model = f("make"), f("model")
+    if make or model:
+        pac = " · <b>only this brand (PAC)</b>" if f("pac") else ""
+        parts = ([f"Brand <b>{html.escape(make)}</b>"] if make else []) + ([f"Model <b>{html.escape(model)}</b>"] if model else [])
+        L.append("🏭 " + " · ".join(parts) + pac)
+    specs = f("key_specs") or f("spec_text")
+    if specs:
+        L.append(f"🔧 {html.escape(_short_specs(specs))}")
+    elif f("spec_in_buyer_doc"):
+        L.append("🔧 Specs in a <b>separate buyer document</b> – open on GeM")
+    terms = []
+    if f("warranty"):
+        terms.append(f"warranty {f('warranty')}")
+    if f("installation"):
+        terms.append("installation in scope")
+    if f("inspection") == "Yes":
+        terms.append("3rd-party inspection")
+    if f("ra_enabled") == "Yes":
+        terms.append("reverse auction")
+    if f("payment_days"):
+        terms.append(f"payment ~{f('payment_days')} days")
+    if terms:
+        L.append("🛡 " + " · ".join(terms))
     extra = []
-    if f("oem_auth_required"):
+    if f("oem_auth_required") and not make:
         extra.append("OEM letter needed")
     if f("turnover_min"):
         extra.append(f"turnover ≥ {rupees(f('turnover_min'))}")
