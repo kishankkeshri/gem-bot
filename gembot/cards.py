@@ -82,6 +82,33 @@ def _short_specs(s: str, limit: int = 220) -> str:
     return s if len(s) <= limit else s[:limit].rsplit(" ", 1)[0] + "…"
 
 
+def contacts(b: dict, today: date) -> list[str]:
+    """Who is behind the bid, as printed in the document. Tech-evaluation committee names are never published."""
+    f, out = b["f"], []
+    who = []
+    if f("consignee_officer"):
+        who.append(f"Consignee {html.escape(f('consignee_officer'))}")
+    if f("buyer_email"):
+        who.append(f"Buyer {html.escape(f('buyer_email'))}")
+    elif f("purchase_office"):
+        who.append(html.escape(f("purchase_office")))
+    if who:
+        out.append("👤 " + " · ".join(who))
+    if f("competent_authority"):
+        d = f" ({html.escape(f('competent_designation'))})" if f("competent_designation") else ""
+        out.append(f"✍️ Approved by {html.escape(f('competent_authority'))}{d}")
+    if f("prebid_date"):
+        from datetime import datetime
+        try:
+            when = datetime.strptime(f("prebid_date"), "%d-%m-%Y %H:%M")
+            past = " (over)" if when.date() < today else ""
+        except ValueError:
+            past = ""
+        venue = f" · {html.escape(f('prebid_venue')[:70])}" if f("prebid_venue") else ""
+        out.append(f"🤝 Pre-bid {_d(f('prebid_date') + ':00')}{past}{venue}")
+    return out
+
+
 def yn(v) -> str:
     return {"Yes": "✅ Yes", "No": "❌ No"}.get(v or "", "❔ not stated")
 
@@ -132,7 +159,10 @@ def card(b: dict, entities: dict, today: date) -> str:
         terms.append(f"payment ~{f('payment_days')} days")
     if terms:
         L.append("🛡 " + " · ".join(terms))
+    L += contacts(b, today)
     extra = []
+    if f("integrity_pact"):
+        extra.append("Integrity Pact")
     if f("oem_auth_required") and not make:
         extra.append("OEM letter needed")
     if f("turnover_min"):

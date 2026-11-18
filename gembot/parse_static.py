@@ -96,6 +96,12 @@ def _parse_gem(p: list[str]) -> dict:
     f["spec_in_buyer_doc"] = _has(p, r"Buyer Specification Document Download")
     f["spec_text"] = (_find(p, r"Bid Requirement \(Allowed Values\)\s*(.+?)\s*(?:/\s*){2,}Consignees")
                       or _find(p, r"Specification\s*/\s*Values\s*/\s*Core\s*(.+?)\s*/\s*Addon"))
+    f["buyer_email"] = _find(p, r"Buyer Email id\s*:?\s*(\S+@\S+)")
+    f["hod_email"] = _find(p, r"HOD Email id\s*:?\s*(\S+@\S+)")
+    f["competent_authority"] = _find(p, r"Name of Competent Authority\s*(.+?)\s*/\s*Designation")
+    f["competent_designation"] = _find(p, r"Designation of Competent Authority\s*(.+?)\s*/")
+    f["consignee_officer"] = _find(p, r"Delivery Days\s*1\s+([A-Z][A-Za-z. ]{2,40}?)\s+\d{6}", flags=0)
+    f["tech_clar_days"] = _find(p, r"Time allowed for Technical Clarifications during technical evaluation\s*(\d+)\s*Days")
     f["inspection"] = _find(p, r"Inspection Required[^)]{0,80}\)\s*(Yes|No)")
     f["ra_enabled"] = _find(p, r"Bid to RA enabled\s*(Yes|No)")
     f["warranty"] = _find(p, r"Warranty period of the supplied products shall be\s*(\d+\s*years?)") or \
@@ -121,6 +127,8 @@ def _parse_rfq(p: list[str]) -> dict:
         "turnover_min": _find(p, r"turnover.{0,150}?(?:Rs\.?\s*)?([\d.,]+\s*(?:lakh|crore))"),
         "est_value": _find(p, r"estimated (?:cost|value)[^.]{0,40}?Rs\.?\s*([\d,]{4,})"),
         "consignee_pin": _find(p, r"Dhanbad\s*[-–]?\s*(826\d{3})"),
+        "purchase_office": _find(p, r"((?:Deputy|Assistant) Registrar\s*\(\s*[^)]{2,40}\))"),
+        "buyer_email": _find(p, r"Email\s*:\s*([\w.\-]+@[\w.\-]+\.\w+)"),
         "warranty": _find(p, r"warranty\s*/?\s*(?:guarantee)?[^.]{0,60}?(\d+\s*(?:years?|months?))"),
         "spec_text": _find(p, r"Technical Specifications?(?: for [^:]{0,60})?\s*(.{40,400}?)(?=\s(?:Annexure|Price Schedule|$))"),
     }
@@ -147,6 +155,10 @@ def _common(p: list[str]) -> dict:
         "it_services": _has(p, r"software development|web portal|mobile app(?:lication)? development|website development|data migration|system integration"),
         "iso_required": _has(p, r"ISO\s*9001"),
         "emd_mse_exempt_text": _has(p, r"exempt(?:ed|ion)? from (?:submission of |furnishing |payment of )?(?:the )?(?:EMD|Earnest Money|bid security)|EMD exemption"),
+        "prebid_date": _find(p, r"Pre-?\s?Bid (?:Date\s*(?:and|&)\s*Time)?[^0-9]{0,40}?(\d{2}-\d{2}-\d{4} \d{2}:\d{2})"),
+        "prebid_venue": _find(p, r"Pre-?\s?Bid Venue\s*(?:\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\s*)?([A-Z][^/]{5,80}?)(?=\s*(?:/|\d+\s*/|\d+$|$))"),
+        # GeM boilerplate mentions it in passing ("other than EMD and signed Integrity Pact"); flag only real asks
+        "integrity_pact": _has(p, r"copy of signed integrity pact|\(Integrity Pact\)[^.]{0,80}rejected|Integrity Pact (?:is|shall be) (?:mandatory|required)"),
         "installation": _has(p, r"Supply\s*(?:&|and)\s*Installation|\bSITC\b|installation,? testing and commissioning"),
         "payment_days": _find(p, r"[Pp]ayment[^.]{0,140}?within\s*(\d+)\s*days"),
         "local_pref_signals": _has(p, r"Class[- ]?I local supplier|local supplier|Make in India|preference to (?:the )?local"),
