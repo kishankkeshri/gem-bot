@@ -16,6 +16,12 @@ class PoliteSession:
         self._last: dict[str, float] = {}
 
     def get(self, url: str, retries: int = 2) -> requests.Response:
+        return self._req("GET", url, retries)
+
+    def post(self, url: str, data: dict, headers: dict | None = None, retries: int = 2) -> requests.Response:
+        return self._req("POST", url, retries, data=data, headers=headers)
+
+    def _req(self, method: str, url: str, retries: int, **kw) -> requests.Response:
         host = urlparse(url).netloc
         last_err: Exception | None = None
         for attempt in range(retries + 1):
@@ -24,7 +30,7 @@ class PoliteSession:
                 time.sleep(wait)
             self._last[host] = time.time()
             try:
-                r = self.s.get(url, timeout=self.timeout)
+                r = self.s.request(method, url, timeout=self.timeout, **kw)
                 if r.status_code < 500:
                     r.raise_for_status()
                     return r

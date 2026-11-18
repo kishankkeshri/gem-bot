@@ -23,11 +23,25 @@ warnings.filterwarnings("ignore", message=".*OpenSSL.*")
 
 from gembot import extract_ai, parse_static, pdf, report, rules  # noqa: E402
 from gembot.http import PoliteSession
-from gembot.sources import iitism
+from gembot.sources import gem, iitism  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
-SOURCES = [iitism]
+SOURCES = {"iitism": iitism, "gem": gem}
+# New Gemini calls per run (cached documents are free). GeM PDFs parse well statically,
+# so the budget mostly goes to free-form institute documents.
+AI_BUDGET = int(os.environ.get("AI_MAX_CALLS", "40"))
+
+
+def in_region(facts: dict, row: dict, geo: dict) -> bool:
+    """GeM keyword hits are confirmed against the bid PDF's consignee PIN / address."""
+    if row["source"] != "gem":
+        return True
+    pin = str(facts.get("consignee_pin", {}).get("value", ""))
+    addr = str(facts.get("consignee", {}).get("value", "")).lower()
+    if pin and any(pin.startswith(p) for p in geo["pin_prefixes"]):
+        return True
+    return any(pl.lower() in addr for pl in geo["places"])
 
 
 def need(name: str) -> str:
@@ -42,6 +56,10 @@ def main() -> None:
     ap.add_argument("--send", action="store_true")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--source", choices=list(SOURCES), action="append",
+                    help="run only these sources (default: all)")
+    ap.add_argument("--probe", action="store_true",
+                    help="GeM: fetch one page for 'Dhanbad', save raw JSON to data/gem_probe.json, exit")
     args = ap.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -49,16 +67,31 @@ def main() -> None:
     http = PoliteSession(os.environ.get("HTTP_USER_AGENT", "GemBot/0.1"),
                          float(os.environ.get("HTTP_MIN_DELAY_SECONDS", "3")))
     entities = yaml.safe_load((ROOT / "config/entities.yaml").read_text())["entities"]
+    geo = yaml.safe_load((ROOT / "config/geo.yaml").read_text())
     today = date.today()
+
+    if args.probe:
+        gem.MAX_PAGES_PER_PLACE = 1
+        token = gem._token(http)
+        docs = gem.search(http, "Dhanbad", token)
+        DATA.mkdir(exist_ok=True)
+        (DATA / "gem_probe.json").write_text(json.dumps(docs, indent=1, default=str))
+        print(f"GeM probe OK: {len(docs)} bids on page 1 for 'Dhanbad' -> data/gem_probe.json")
+        for d in docs[:10]:
+            print(" ", d.get("b_bid_number"), "|", str(d.get("b_category_name"))[:60])
+        return
 
     seen_path = DATA / "seen.json"
     seen = set(json.loads(seen_path.read_text())) if seen_path.exists() else set()
     failures: list[str] = []
     bids: list[dict] = []
 
-    for src in SOURCES:
+    out_of_region = 0
+    for name in (args.source or list(SOURCES)):
+        src = SOURCES[name]
         try:
-            rows = src.fetch(http)
+            rows = src.fetch(http, geo["places"]) if name == "gem" else src.fetch(http)
+            print(f"[{name}] {len(rows)} listings")
         except Exception as e:  # noqa: BLE001 - report, never skip silently
             failures.append(f"{src.NAME}: listing unreachable today ({e.__class__.__name__}: {e})")
             continue
@@ -71,16 +104,24 @@ def main() -> None:
             if args.limit and len(bids) >= args.limit:
                 break
             try:
-                bids.append(analyse(row, http, entities, today, closing_days))
+                b = analyse(row, http, entities, today, closing_days)
+                if in_region(b["facts"], row, geo):
+                    bids.append(b)
+                else:
+                    out_of_region += 1
             except Exception as e:  # noqa: BLE001
                 traceback.print_exc()
                 failures.append(f"{row['external_id']}: could not read document ({e.__class__.__name__})")
             seen.add(key)
 
+    if out_of_region:
+        print(f"[gem] {out_of_region} keyword hits dropped: consignee outside the region")
     bids = [b for b in bids if b["best"]["rating"] != "SKIP"]
     bids.sort(key=lambda b: (rules.ORDER[b["best"]["rating"]], b["days_left"] if b["days_left"] is not None else 999))
 
-    xlsx = report.write_excel(bids, DATA / "reports" / f"bids_{today:%Y-%m-%d}.xlsx", failures)
+    xlsx = DATA / "reports" / f"bids_{today:%Y-%m-%d}.xlsx"
+    if bids or not xlsx.exists():  # a run with nothing new must not wipe today's report
+        report.write_excel(bids, xlsx, failures)
     text = report.telegram_summary(bids, today, failures, closing_days)
     print(text, f"\n\nExcel: {xlsx}", sep="")
 
@@ -93,7 +134,7 @@ def main() -> None:
 
 def analyse(row: dict, http: PoliteSession, entities: list[dict], today: date, closing_days: int) -> dict:
     facts: dict = {}
-    if row["doc_url"] and row["doc_url"].lower().split("?")[0].endswith(".pdf"):
+    if row["doc_url"] and (row["source"] == "gem" or row["doc_url"].lower().split("?")[0].endswith(".pdf")):
         path = DATA / "pdfs" / f"{row['source']}_{row['external_id'].replace('/', '_')}.pdf"
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,8 +145,11 @@ def analyse(row: dict, http: PoliteSession, entities: list[dict], today: date, c
         facts = parse_static.parse(pages)
         if facts.get("doc_format", {}).get("value") == "Institute RFQ":
             facts.pop("item", None)  # the listing title is more reliable than a guessed subject line
-        if extract_ai.enabled():
-            new, summary, model = extract_ai.fill(pages, facts, DATA / "ai" / (path.stem + ".json"))
+        cache = DATA / "ai" / (path.stem + ".json")
+        global AI_BUDGET
+        if extract_ai.enabled() and (cache.exists() or AI_BUDGET > 0):
+            AI_BUDGET -= 0 if cache.exists() else 1
+            new, summary, model = extract_ai.fill(pages, facts, cache)
             facts.update(new)
             if summary:
                 facts["summary"] = {"value": summary, "page": 0, "quote": "", "by": model}
