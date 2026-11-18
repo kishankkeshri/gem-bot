@@ -1,0 +1,19 @@
+# Region filter: a bid matches if its consignee/organisation text names a place
+# or its consignee PIN starts with one of these prefixes.
+places:
+  - Dhanbad
+  - Bokaro
+  - Giridih
+  - Deoghar
+  - Dumka
+  - Jamtara
+  - Godda
+  - Pakur
+  - Sahibganj
+  - Jamshedpur
+  - Hazaribagh
+  - Ramgarh
+  - Ranchi
+  - Sindri
+  - Chandrapura
+pin_prefixes: ["826", "827", "828", "815", "814", "816", "813", "831", "832", "825", "829", "834", "835"]
