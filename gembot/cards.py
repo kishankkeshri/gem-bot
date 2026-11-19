@@ -85,18 +85,14 @@ def _short_specs(s: str, limit: int = 220) -> str:
 def contacts(b: dict, today: date) -> list[str]:
     """Who is behind the bid, as printed in the document. Tech-evaluation committee names are never published."""
     f, out = b["f"], []
-    who = []
-    if f("consignee_officer"):
-        who.append(f"Consignee {html.escape(f('consignee_officer'))}")
-    if f("buyer_email"):
-        who.append(f"Buyer {html.escape(f('buyer_email'))}")
-    elif f("purchase_office"):
-        who.append(html.escape(f("purchase_office")))
-    if who:
-        out.append("👤 " + " · ".join(who))
+    out.append(f"👤 Indenter (consignee): <b>{html.escape(f('consignee_officer'))}</b>" if f("consignee_officer")
+               else "👤 Indenter: not named in this document")
+    buyer = [html.escape(x) for x in (b["row"].get("buyer_account"), f("buyer_email") or f("purchase_office")) if x]
+    if buyer:
+        out.append("🏢 Buyer " + " · ".join(buyer))
     if f("competent_authority"):
         d = f" ({html.escape(f('competent_designation'))})" if f("competent_designation") else ""
-        out.append(f"✍️ Approved by {html.escape(f('competent_authority'))}{d}")
+        out.append(f"✍️ Approving authority: <b>{html.escape(f('competent_authority'))}</b>{d}")
     if f("prebid_date"):
         from datetime import datetime
         try:

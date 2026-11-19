@@ -88,7 +88,7 @@ def fetch(http: PoliteSession, places: list[str]) -> list[dict]:
         found = search(http, place, token)
         print(f"[gem] {place}: {len(found)} ongoing bids", flush=True)
         for d in found:
-            if d.get("b_bid_type") not in (1, None):  # 1 = bid; 2/5 = reverse auctions
+            if _first(d.get("b_bid_type")) not in (1, None):  # 1 = bid; 2/5 = reverse auctions (values come as lists)
                 continue
             bid_no = _first(d.get("b_bid_number"))
             if not bid_no or bid_no in by_id:
@@ -107,5 +107,7 @@ def fetch(http: PoliteSession, places: list[str]) -> list[dict]:
                                               _first(d.get("ba_official_details_deptName"))] if x),
                 "location": place,
                 "matched_keyword": place,
+                "buyer_account": _first(d.get("b.b_created_by")),
+                "qty": _first(d.get("b_total_quantity")),
             }
     return list(by_id.values())
