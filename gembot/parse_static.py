@@ -106,6 +106,9 @@ def _parse_gem(p: list[str]) -> dict:
     f["ra_enabled"] = _find(p, r"Bid to RA enabled\s*(Yes|No)")
     f["warranty"] = _find(p, r"Warranty period of the supplied products shall be\s*(\d+\s*years?)") or \
         _find(p, r"Warranty \(in Year\)\s*([\d, ]+(?:Or higher)?)")
+    if f.get("emd") and not inr(f["emd"]["value"]):  # "EMD Amount 0" = no EMD
+        f["emd_required"] = dict(f["emd"], value="No")
+        f.pop("emd")
     if f.get("emd"):  # an amount means EMD applies, whatever a loose "Required No" matched
         f["emd_required"] = dict(f["emd"], value="Yes")
     if f.get("docs_required") and re.search(r"OEM Authori[sz]ation", f["docs_required"]["value"], re.I):

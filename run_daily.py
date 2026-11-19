@@ -175,8 +175,8 @@ def main() -> None:
     if args.send:
         send_cards(bids, entities, today, failures, closing_days)
         print("sent to Telegram")
-    DATA.mkdir(exist_ok=True)
-    seen_path.write_text(json.dumps(sorted(seen), indent=0))
+    if args.send:  # a dry run must not mark bids as seen, or the real run would skip them
+        seen_path.write_text(json.dumps(sorted(seen), indent=0))
 
 
 def send_cards(bids: list[dict], entities: list[dict], today: date, failures: list[str], closing_days: int) -> None:
