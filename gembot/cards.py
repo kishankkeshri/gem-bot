@@ -126,6 +126,9 @@ def card(b: dict, entities: dict, today: date) -> str:
         L.append(f"<i>{html.escape(f('summary')[:260])}</i>")
     L += [
         f"🏛 {html.escape(org[:90])}" + (f" · 📍{html.escape(place)}" if place else ""),
+        *([] if b.get("region_confirmed", True) else
+          [f"❔ Delivery address not confirmed in your region (matched “{html.escape(str(b['row'].get('matched_keyword')))}” on GeM)"
+           + (f" · consignee: {html.escape(str(f('consignee'))[:60])}" if f("consignee") else "")]),
         f"📅 Start {_d(f('start_date'))} · End <b>{_d(f('end_date') or b['end'])}</b> · Opens {_d(f('opening_date'))}",
         f"💰 EMD <b>{html.escape(rupees(f('emd')) if f('emd') else ('Nil' if f('emd_required') == 'No' else 'not stated'))}</b> · {size_line(b)}",
         f"🏷 MSE EMD exemption: {emd_exemption(b, entities)}",

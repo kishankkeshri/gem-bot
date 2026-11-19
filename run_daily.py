@@ -131,17 +131,18 @@ def main() -> None:
             print(f"  [{len(bids) + out_of_region + 1}] {row['external_id']} {row['title'][:50]}", flush=True)
             try:
                 b = analyse(row, http, entities, today, closing_days)
-                if in_region(b["facts"], row, geo):
-                    bids.append(b)
-                else:
+                # Never drop: a missed bid costs more than an extra card. Just label it.
+                b["region_confirmed"] = in_region(b["facts"], row, geo)
+                if not b["region_confirmed"]:
                     out_of_region += 1
+                bids.append(b)
             except Exception as e:  # noqa: BLE001
                 traceback.print_exc()
                 failures.append(f"{row['external_id']}: could not read document ({e.__class__.__name__})")
             seen.add(key)
 
     if out_of_region:
-        print(f"[gem] {out_of_region} keyword hits dropped: consignee outside the region")
+        print(f"[gem] {out_of_region} bids matched a district name but the delivery PIN isn't confirmed in the region (kept, labelled)")
     bids = [b for b in bids if b["best"]["rating"] != "SKIP"]
     seen_numbers, unique = set(), []
     for b in bids:  # IIT sometimes lists one GeM bid under two tender numbers
@@ -170,7 +171,7 @@ def send_cards(bids: list[dict], entities: list[dict], today: date, failures: li
     import time as _t
     token, chat = need("TELEGRAM_BOT_TOKEN"), need("TELEGRAM_CHAT_ID")
     by_id = {e["id"]: e for e in entities}
-    max_cards = int(os.environ.get("MAX_CARDS", "40"))
+    max_cards = int(os.environ.get("MAX_CARDS", "1000"))  # default: every bid gets a card
     st = state.load()
     if not REFRESH:
         cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML",
