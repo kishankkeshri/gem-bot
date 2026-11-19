@@ -274,4 +274,17 @@ def analyse(row: dict, http: PoliteSession, entities: list[dict], today: date, c
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - tell the owner instead of failing silently on the Pi
+        traceback.print_exc()
+        try:
+            load_dotenv(ROOT / ".env")
+            cards.tg(os.environ["TELEGRAM_BOT_TOKEN"], "sendMessage", chat_id=os.environ["TELEGRAM_CHAT_ID"],
+                     text=f"❌ Daily bid run failed: {exc.__class__.__name__}: {str(exc)[:300]}\n"
+                          "Logs: journalctl -u gembot-daily -n 100")
+        except Exception:  # noqa: BLE001
+            pass
+        sys.exit(1)

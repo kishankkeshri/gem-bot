@@ -1,0 +1,26 @@
+# Gem-bot daily run: fetch -> analyse -> Telegram cards. Started by gembot-daily.timer.
+[Unit]
+Description=Gem-bot daily bid digest
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/gem-bot
+ExecStart=/home/pi/gem-bot/.venv/bin/python run_daily.py --send
+# The first GeM pass on a fresh box can take a while; later runs only open new bids.
+TimeoutStartSec=3h
+# Shares the Pi with Reach: stay small and polite.
+MemoryMax=500M
+Nice=10
+IOSchedulingClass=idle
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/pi/gem-bot/data
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gembot-daily

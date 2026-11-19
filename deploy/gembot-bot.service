@@ -1,0 +1,29 @@
+# Always-on listener for the card buttons (Watch / Skip / PDF) and /watching.
+# Only ONE copy may poll a bot token at a time - stop any listener on the Mac first.
+[Unit]
+Description=Gem-bot Telegram button listener
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/gem-bot
+ExecStart=/home/pi/gem-bot/.venv/bin/python -u bot.py
+Restart=always
+RestartSec=10
+MemoryMax=150M
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/pi/gem-bot/data
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gembot-bot
+
+[Install]
+WantedBy=multi-user.target

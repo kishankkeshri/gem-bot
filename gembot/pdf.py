@@ -18,7 +18,27 @@ def page_texts(path: Path) -> list[str]:
         pages = out.split("\f")
     else:
         pages = [(p.extract_text() or "") for p in PdfReader(str(path)).pages]
-    return [clean(p) for p in pages]
+    pages = [clean(p) for p in pages]
+    if sum(len(p) for p in pages) < 200:  # scanned document: no text layer
+        ocr = _ocr(path)
+        if ocr:
+            return ocr
+    return pages
+
+
+def _ocr(path: Path, max_pages: int = 8) -> list[str]:
+    """OCR fallback (Pi has tesseract + pdftoppm). Capped pages: eligibility details sit up front."""
+    if not (shutil.which("pdftoppm") and shutil.which("tesseract")):
+        return []
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["pdftoppm", "-r", "200", "-gray", "-png", "-f", "1", "-l", str(max_pages),
+                        str(path), f"{tmp}/p"], capture_output=True, timeout=300)
+        out = []
+        for img in sorted(Path(tmp).glob("p*.png")):
+            r = subprocess.run(["tesseract", str(img), "-", "-l", "eng"], capture_output=True, text=True, timeout=180)
+            out.append(clean(r.stdout))
+        return out
 
 
 def clean(text: str) -> str:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Gem-bot every morning at 07:30 IST
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 Asia/Kolkata
+# A Pi that was off at 07:30 runs as soon as it is back, instead of skipping the day.
+Persistent=true
+RandomizedDelaySec=2m
+
+[Install]
+WantedBy=timers.target
