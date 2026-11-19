@@ -185,6 +185,7 @@ def send_cards(bids: list[dict], entities: list[dict], today: date, failures: li
     by_id = {e["id"]: e for e in entities}
     max_cards = int(os.environ.get("MAX_CARDS", "1000"))  # default: every bid gets a card
     st = state.load()
+    failed: list[str] = []
     if not REFRESH:
         cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML",
                  text=cards.header(bids, today, failures, closing_days))
@@ -197,25 +198,35 @@ def send_cards(bids: list[dict], entities: list[dict], today: date, failures: li
         prev = st["bids"].get(sid, {})
         body = dict(chat_id=chat, parse_mode="HTML", disable_web_page_preview="true",
                     text=cards.card(b, by_id, today), reply_markup=cards.keyboard(sid, prev.get("status", "new")))
-        if REFRESH and prev.get("message_id"):  # update the card already in the chat instead of a duplicate
-            try:
-                cards.tg(token, "editMessageText", message_id=prev["message_id"], **body)
-            except Exception as e:  # noqa: BLE001 - "message is not modified" is fine
-                print("  edit skipped:", str(e)[:80])
-            msg = {"message_id": prev["message_id"]}
-        else:
-            msg = cards.tg(token, "sendMessage", **body)
+        try:
+            if REFRESH and prev.get("message_id"):  # update the card already in the chat instead of a duplicate
+                try:
+                    cards.tg(token, "editMessageText", message_id=prev["message_id"], **body)
+                except RuntimeError as e:  # "message is not modified" is fine
+                    print("  edit skipped:", str(e)[:100])
+                msg = {"message_id": prev["message_id"]}
+            else:
+                msg = cards.tg(token, "sendMessage", **body)
+        except Exception as e:  # noqa: BLE001 - one bad card must not stop the rest
+            print(f"  card failed for {key}: {e}", flush=True)
+            failed.append(key)
+            continue
         st["bids"][sid] = {"key": key, "title": report.item(b), "org": b["f"]("org") or b["row"]["org"],
                            "end": b["end"].isoformat() if b["end"] else None, "doc_url": b["row"]["doc_url"],
                            "pdf": str(b["pdf"]) if b.get("pdf") else None, "rating": b["best"]["rating"],
                            "status": prev.get("status", "new"), "message_id": msg["message_id"]}
+        state.save(st)  # after every card, so buttons keep working even if the run dies later
         _t.sleep(1.1)  # Telegram allows ~1 message/second per chat
     if len(worth) > max_cards:
         cards.tg(token, "sendMessage", chat_id=chat, text=f"… {len(worth) - max_cards} more bids not shown (MAX_CARDS={max_cards}).")
     reds = [b for b in bids if b["best"]["rating"] == "RED"]
     if reds and red_as_list and not REFRESH:
-        cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML", disable_web_page_preview="true",
-                 text=cards.red_list(reds))
+        for text in cards.red_list(reds):
+            cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML", disable_web_page_preview="true", text=text)
+            _t.sleep(1.1)
+    if failed:
+        cards.tg(token, "sendMessage", chat_id=chat,
+                 text=f"⚠️ {len(failed)} card(s) could not be sent - see data/last_run.log")
     state.save(st)
 
 

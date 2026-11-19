@@ -21,7 +21,8 @@ def tg(token: str, method: str, **data) -> dict:
         if r.status_code == 429:  # Telegram flood control: wait what it asks
             time.sleep(int(r.json().get("parameters", {}).get("retry_after", 5)) + 1)
             continue
-        r.raise_for_status()
+        if not r.ok:  # report Telegram's own reason; never put the token-bearing URL in logs
+            raise RuntimeError(f"Telegram {method} {r.status_code}: {r.json().get('description', r.text[:200])}")
         return r.json()["result"]
     raise RuntimeError(f"Telegram {method} kept rate-limiting")
 
@@ -192,13 +193,17 @@ def header(bids: list[dict], today: date, failures: list[str], closing_days: int
     return "\n".join(L)
 
 
-def red_list(reds: list[dict]) -> str:
-    L = [f"<b>🔴 Not realistic now ({len(reds)})</b>"]
-    for b in reds[:40]:
+def red_list(reds: list[dict]) -> list[str]:
+    """One or more messages, each under Telegram's 4096-character limit."""
+    msgs, cur = [], f"<b>🔴 Not realistic now ({len(reds)})</b>"
+    for b in reds:
         why = (b["best"]["blockers"] or ["see document"])[0]
         link = b["row"]["doc_url"]
         name = html.escape(item(b)[:60])
-        L.append(f"• {f'<a href={chr(34)}{html.escape(link)}{chr(34)}>{name}</a>' if link else name} – {html.escape(why[:90])}")
-    if len(reds) > 40:
-        L.append(f"… and {len(reds) - 40} more")
-    return "\n".join(L)
+        line = f"\n• {f'<a href={chr(34)}{html.escape(link)}{chr(34)}>{name}</a>' if link else name} – {html.escape(why[:90])}"
+        if len(cur) + len(line) > 3900:
+            msgs.append(cur)
+            cur = "<b>🔴 (continued)</b>"
+        cur += line
+    msgs.append(cur)
+    return msgs
