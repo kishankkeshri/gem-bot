@@ -241,12 +241,12 @@ def analyse(row: dict, http: PoliteSession, entities: list[dict], today: date, c
         pages = pdf.page_texts(path)
         (DATA / "text").mkdir(parents=True, exist_ok=True)
         (DATA / "text" / (path.stem + ".txt")).write_text("\n\f\n".join(pages))
-        facts = parse_static.parse(pages)
+        facts = parse_static.parse(pages, pdf.alt_page_texts(path))
         if facts.get("doc_format", {}).get("value") == "Institute RFQ":
             facts.pop("item", None)  # the listing title is more reliable than a guessed subject line
         for k, v in parse_static.make_model_from_title(row["title"]).items():
             facts.setdefault(k, v)
-        cache = DATA / "ai" / (path.stem + ".v2.json")  # v2: adds make/model/key_specs
+        cache = DATA / "ai" / (path.stem + ".v3.json")  # v3: OCR'd annexures, stricter EMD-waiver question
         global AI_BUDGET
         if extract_ai.enabled() and (cache.exists() or AI_BUDGET > 0):
             AI_BUDGET -= 0 if cache.exists() else 1

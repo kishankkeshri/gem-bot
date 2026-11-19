@@ -18,7 +18,7 @@ import requests
 FIELDS = {
     "end_date": "bid submission last date, DD-MM-YYYY",
     "emd": "EMD / bid security amount in rupees, digits only",
-    "emd_exempt": "'Yes' if EMD is waived/exempt (for everyone or for MSEs), else omit",
+    "emd_exempt": "'Yes' ONLY if no EMD is required from any bidder. An exemption for MSEs/startups is NOT this - omit it then",
     "epbg_pct": "performance security / ePBG percent, number only",
     "est_value": "estimated cost / value in rupees, digits only",
     "turnover_min": "minimum average annual turnover required, in rupees, digits only",

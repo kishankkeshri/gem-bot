@@ -21,7 +21,7 @@ def _v(facts: dict, key: str):
 def end_date(facts: dict, listing_end: Optional[date]) -> Optional[date]:
     raw = _v(facts, "end_date")
     if raw:
-        for fmt in ("%d-%m-%Y %H:%M:%S", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%Y"):
+        for fmt in ("%d-%m-%Y %H:%M:%S", "%d-%b-%Y %I:%M %p", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%Y"):
             try:
                 return datetime.strptime(raw, fmt).date()
             except ValueError:
@@ -74,6 +74,12 @@ def rate(facts: dict, row: dict, entity: dict, today: date, closing_days: int = 
             hard = True
             blockers.append(f"{entity['name']} isn't set up for goods supply")
 
+    tt = _v(facts, "tender_type")
+    if tt == "Limited":
+        hard = True
+        blockers.append("Limited tender: only vendors the buyer invited can bid")
+    elif tt == "Single" or _v(facts, "single_tender"):
+        actions.insert(0, "Single-tender enquiry: meant for one OEM / its dealer - worth it only if you hold that OEM's dealer letter")
     read_doc = "doc_format" in facts and any(
         k in facts for k in ("end_date", "emd", "emd_required", "emd_exempt", "delivery_days", "bid_number", "summary"))
     if not read_doc:
@@ -104,6 +110,8 @@ def rate(facts: dict, row: dict, entity: dict, today: date, closing_days: int = 
         reasons.append("No EMD")
     elif emd_amt:
         exempt = entity.get("mse") and (kind == "services" or entity.get("role_for_goods") == "manufacturer")
+        if _v(facts, "emd_exemption_allowed") == "No":
+            exempt = False
         if exempt:
             reasons.append(f"EMD Rs {emd_amt:,.0f}, MSE exemption likely ({kind}) - upload Udyam")
         else:

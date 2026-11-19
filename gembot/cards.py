@@ -44,7 +44,8 @@ def _d(s) -> str:
         return "?"
     from datetime import datetime
     s = str(s)
-    for fmt, out in (("%d-%m-%Y %H:%M:%S", "%d %b %H:%M"), ("%d-%m-%Y", "%d %b"), ("%d.%m.%Y", "%d %b"), ("%d/%m/%Y", "%d %b")):
+    for fmt, out in (("%d-%m-%Y %H:%M:%S", "%d %b %H:%M"), ("%d-%b-%Y %I:%M %p", "%d %b %H:%M"),
+                     ("%d-%m-%Y", "%d %b"), ("%d.%m.%Y", "%d %b"), ("%d/%m/%Y", "%d %b"), ("%Y-%m-%d", "%d %b")):
         try:
             return datetime.strptime(s, fmt).strftime(out).replace(" 00:00", "")
         except ValueError:
@@ -69,6 +70,11 @@ def emd_exemption(b: dict, entities: dict) -> str:
         return "✅ no EMD in this bid"
     if not b["f"]("emd"):
         return "❔ EMD not stated"
+    if b["f"]("emd_exemption_allowed") == "No":
+        return "❌ no exemption in this tender – everyone pays"
+    makers = b["facts"].get("mse_emd_makers_only")
+    if makers and ent.get("role_for_goods") != "manufacturer" and a["kind"] != "services":
+        return f"❌ only MSE makers / service providers (p.{makers['page']}) – resellers pay"
     if a["kind"] == "services" and ent.get("mse"):
         return "✅ MSE exemption likely (service bid) – upload Udyam"
     if ent.get("role_for_goods") == "manufacturer" and ent.get("mse"):
@@ -123,6 +129,10 @@ def card(b: dict, entities: dict, today: date) -> str:
 
     L = [f"{EMOJI[a['rating']]} <b>{a['rating']}</b> · {html.escape(ent_name)} · {when}",
          f"<b>{html.escape(item(b)[:140])}</b>{qty}"]
+    tt = f("tender_type")
+    if tt in ("Single", "Limited") or f("single_tender"):
+        L.append(f"🎯 <b>{'Limited' if tt == 'Limited' else 'Single'}-tender enquiry</b> – "
+                 + ("invited vendors only" if tt == "Limited" else "aimed at one OEM / its dealer"))
     if f("summary"):
         L.append(f"<i>{html.escape(f('summary')[:260])}</i>")
     L += [
@@ -131,7 +141,8 @@ def card(b: dict, entities: dict, today: date) -> str:
           [f"❔ Delivery address not confirmed in your region (matched “{html.escape(str(b['row'].get('matched_keyword')))}” on GeM)"
            + (f" · consignee: {html.escape(str(f('consignee'))[:60])}" if f("consignee") else "")]),
         f"📅 Start {_d(f('start_date'))} · End <b>{_d(f('end_date') or b['end'])}</b> · Opens {_d(f('opening_date'))}",
-        f"💰 EMD <b>{html.escape(rupees(f('emd')) if f('emd') else ('Nil' if f('emd_required') == 'No' else 'not stated'))}</b> · {size_line(b)}",
+        f"💰 EMD <b>{html.escape(rupees(f('emd')) if f('emd') else ('Nil' if f('emd_required') == 'No' else 'not stated'))}</b>"
+        + (f" total for {f('emd_schedules')} schedules" if f("emd_schedules") else "") + f" · {size_line(b)}",
         f"🏷 MSE EMD exemption: {emd_exemption(b, entities)}",
         f"🇮🇳 Local (MII) pref: {yn(f('mii_preference')) if f('mii_preference') else ('ℹ️ mentioned' if f('local_pref_signals') else yn(None))} · MSE pref: {yn(f('mse_preference'))}",
         f"📋 Exp/turnover relax – MSE: {yn(f('mse_relax'))} · Startup: {yn(f('startup_relax'))}",
@@ -153,6 +164,12 @@ def card(b: dict, entities: dict, today: date) -> str:
         terms.append("installation in scope")
     if f("inspection") == "Yes":
         terms.append("3rd-party inspection")
+    elif f("inspection_by_buyer"):
+        terms.append("buyer inspects on delivery")
+    if f("training"):
+        terms.append("training to staff")
+    if f("tender_fee") and inr(f("tender_fee")):
+        terms.append(f"tender fee {rupees(f('tender_fee'))}")
     if f("ra_enabled") == "Yes":
         terms.append("reverse auction")
     if f("payment_days"):
