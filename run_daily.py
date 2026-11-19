@@ -126,7 +126,8 @@ def main() -> None:
     for name in (args.source or list(SOURCES)):
         src = SOURCES[name]
         try:
-            rows = src.fetch(http, geo["places"]) if name == "gem" else src.fetch(http)
+            rows = (src.fetch(http, geo["places"] + geo.get("extra_search", [])) if name == "gem"
+                    else src.fetch(http))
             print(f"[{name}] {len(rows)} listings")
         except Exception as e:  # noqa: BLE001 - report, never skip silently
             traceback.print_exc()

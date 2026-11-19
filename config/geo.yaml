@@ -1,6 +1,11 @@
-# Region filter: a bid matches if its consignee/organisation text names a place
-# or its consignee PIN starts with one of these prefixes.
+# Region filter.
+#   places        - searched on GeM AND used to confirm a bid's delivery address is in the region
+#   extra_search  - searched on GeM only (buyer names); the delivery PIN still decides "confirmed"
+#   pin_prefixes  - a consignee PIN starting with one of these confirms the region
+# Each extra name costs one GeM search request (+1 per extra page of hits) on the daily run.
+
 places:
+  # districts
   - Dhanbad
   - Bokaro
   - Giridih
@@ -14,6 +19,53 @@ places:
   - Hazaribagh
   - Ramgarh
   - Ranchi
+  # Dhanbad district towns / coalfield areas
+  - Jharia
   - Sindri
+  - Nirsa
+  - Katras
+  - Govindpur
+  - Topchanchi
+  - Baghmara
+  - Kusunda
+  - Maithon
+  - Panchet
+  # Bokaro district
+  - Chas
+  - Bermo
+  - Phusro
   - Chandrapura
-pin_prefixes: ["826", "827", "828", "815", "814", "816", "813", "831", "832", "825", "829", "834", "835"]
+  - Tenughat
+  - Kathara
+  # Giridih / Deoghar / Dumka / Jamtara / Godda / Sahibganj
+  - Madhupur
+  - Jasidih
+  - Mihijam
+  - Rajmahal
+  - Lalmatia
+  - Barharwa
+  # Hazaribagh / Ramgarh
+  - Patratu
+  - Bhurkunda
+  - Barkagaon
+  # East Singhbhum
+  - Adityapur
+  - Gamharia
+  - Ghatshila
+  - Jaduguda
+
+extra_search:
+  # big regional buyers (as GeM shows department / organisation names)
+  - Bharat Coking Coal
+  - Central Coalfields
+  - Eastern Coalfields
+  - Central Mine Planning
+  - Damodar Valley Corporation
+  - Bokaro Steel
+  - Hindustan Urvarak
+  - Uranium Corporation
+  - Heavy Engineering Corporation
+  - Patratu Vidyut
+  - CIMFR
+
+pin_prefixes: ["813", "814", "815", "816", "825", "826", "827", "828", "829", "831", "832", "834", "835"]
