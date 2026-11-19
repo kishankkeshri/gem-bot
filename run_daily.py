@@ -67,8 +67,20 @@ class _Tee:
             st.flush()
 
 
+def _single_instance():
+    """Refuse to start while another run is going - two runs would send every card twice."""
+    import fcntl
+    lock = open(DATA / "run.lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit("Another run_daily.py is already running - let it finish (see data/last_run.log).")
+    return lock  # keep the handle open for the life of the process
+
+
 def main() -> None:
     DATA.mkdir(exist_ok=True)
+    _lock = _single_instance()  # noqa: F841
     log = open(DATA / "last_run.log", "w")
     sys.stdout = _Tee(sys.__stdout__, log)
     sys.stderr = _Tee(sys.__stderr__, log)

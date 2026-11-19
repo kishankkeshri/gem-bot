@@ -75,6 +75,7 @@ def search(http: PoliteSession, keyword: str, token: str) -> list[dict]:
             raise RuntimeError(f"all-bids-data returned code {data.get('code')}")
         resp = data["response"]["response"]
         docs += resp.get("docs", [])
+        print(f"[gem] {keyword}: page {page}, {len(docs)}/{resp['numFound']}", flush=True)
         if resp["start"] + 10 >= resp["numFound"]:
             break
         page += 1
