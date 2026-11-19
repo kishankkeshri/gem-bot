@@ -17,8 +17,12 @@ scp -q "$ROOT/.env" "$PI:gem-bot/.env"
 scp -q "$ROOT/config/entities.yaml" "$PI:gem-bot/config/entities.yaml"
 ssh "$PI" 'chmod 600 ~/gem-bot/.env ~/gem-bot/config/entities.yaml'
 
-echo "==> State: seen bids, card buttons, cached PDFs + AI answers (so the Pi doesn't resend everything)"
-rsync -a --exclude 'last_run.log' --exclude 'run.lock' --exclude '*.tmp' "$ROOT/data/" "$PI:gem-bot/data/"
+if ssh "$PI" 'test -f ~/gem-bot/data/seen.json'; then
+  echo "==> State: the Pi already has its own (it is the live copy) - not overwriting"
+else
+  echo "==> State (first install): seen bids, card buttons, cached PDFs + AI answers"
+  rsync -a --exclude 'last_run.log' --exclude 'run.lock' --exclude '*.tmp' "$ROOT/data/" "$PI:gem-bot/data/"
+fi
 
 echo "==> Install (asks for the Pi's sudo password if it has one)"
 ssh -t "$PI" 'cd ~/gem-bot && sudo bash deploy/install-pi.sh'
