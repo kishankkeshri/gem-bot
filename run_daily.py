@@ -92,6 +92,9 @@ def main() -> None:
                     help="run only these sources (default: all)")
     ap.add_argument("--probe", action="store_true",
                     help="GeM: fetch one page for 'Dhanbad', save raw JSON to data/gem_probe.json, exit")
+    ap.add_argument("--daily", action="store_true",
+                    help="scheduled mode: do nothing if today's run already finished cleanly "
+                         "(the Pi fires this at boot, 07:30 and 13:30, so a Pi that was off or a failed run catches up)")
     ap.add_argument("--refresh", action="store_true",
                     help="with --send: edit cards already in the chat instead of sending new ones")
     args = ap.parse_args()
@@ -117,8 +120,15 @@ def main() -> None:
             print(" ", d.get("b_bid_number"), "|", str(d.get("b_category_name"))[:60])
         return
 
+    done_path = DATA / "last_complete_run.txt"
+    if args.daily and done_path.exists() and done_path.read_text().strip() == today.isoformat():
+        print(f"today's run already completed ({today}) - nothing to do")
+        return
+
     seen_path = DATA / "seen.json"
     seen = set(json.loads(seen_path.read_text())) if seen_path.exists() else set()
+    if not args.all:  # cards already sent by a run that was cut off (power loss) must not repeat
+        seen |= {v["key"] for v in state.load()["bids"].values() if v.get("key")}
     failures: list[str] = []
     bids: list[dict] = []
 
@@ -126,7 +136,7 @@ def main() -> None:
     for name in (args.source or list(SOURCES)):
         src = SOURCES[name]
         try:
-            rows = (src.fetch(http, geo["places"] + geo.get("extra_search", [])) if name == "gem"
+            rows = (src.fetch(http, geo["places"] + geo.get("extra_search", []), failures) if name == "gem"
                     else src.fetch(http))
             print(f"[{name}] {len(rows)} listings")
         except Exception as e:  # noqa: BLE001 - report, never skip silently
@@ -178,6 +188,8 @@ def main() -> None:
         print("sent to Telegram")
     if args.send:  # a dry run must not mark bids as seen, or the real run would skip them
         seen_path.write_text(json.dumps(sorted(seen), indent=0))
+        if not failures and not args.source:  # only a full, clean run counts; otherwise the next trigger retries
+            done_path.write_text(today.isoformat())
 
 
 def send_cards(bids: list[dict], entities: list[dict], today: date, failures: list[str], closing_days: int) -> None:

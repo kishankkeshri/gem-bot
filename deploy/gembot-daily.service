@@ -9,7 +9,7 @@ Type=oneshot
 User=pi
 Group=pi
 WorkingDirectory=/home/pi/gem-bot
-ExecStart=/home/pi/gem-bot/.venv/bin/python run_daily.py --send
+ExecStart=/home/pi/gem-bot/.venv/bin/python run_daily.py --send --daily
 # The first GeM pass on a fresh box can take a while; later runs only open new bids.
 TimeoutStartSec=3h
 # Shares the Pi with Reach: stay small and polite.

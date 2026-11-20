@@ -1,11 +1,14 @@
 [Unit]
-Description=Run Gem-bot every morning at 07:30 IST
+Description=Gem-bot daily run: 07:30 IST, a 13:30 retry, and 3 minutes after every boot
 
 [Timer]
 OnCalendar=*-*-* 07:30:00 Asia/Kolkata
-# A Pi that was off at 07:30 runs as soon as it is back, instead of skipping the day.
+# Retry slot: does nothing if the morning run already completed cleanly (run_daily.py --daily).
+OnCalendar=*-*-* 13:30:00 Asia/Kolkata
+# Pi switched on in the morning (or after a power cut): start once it has network and the right time.
+OnBootSec=3min
 Persistent=true
-RandomizedDelaySec=2m
+RandomizedDelaySec=1m
 
 [Install]
 WantedBy=timers.target
