@@ -199,10 +199,19 @@ def card(b: dict, entities: dict, today: date) -> str:
     return "\n".join(L)
 
 
-def header(bids: list[dict], today: date, failures: list[str], closing_days: int) -> str:
+def start_message(n: int, today: date, failures: list[str]) -> str:
+    L = [f"<b>📬 New bids · {today:%d %b %Y}</b>",
+         f"{n} new listing{'s' if n != 1 else ''} to read – cards follow as each document is checked"
+         if n else "Nothing new today."]
+    L += [f"⚠️ {html.escape(x[:200])}" for x in failures]
+    return "\n".join(L)
+
+
+def header(bids: list[dict], today: date, failures: list[str], closing_days: int, done: bool = False) -> str:
+    bids = [b for b in bids if b["best"]["rating"] != "SKIP"]
     c = {k: sum(1 for b in bids if b["best"]["rating"] == k) for k in ("GREEN", "AMBER", "RED")}
     soon = sum(1 for b in bids if b["days_left"] is not None and b["days_left"] <= closing_days and b["best"]["rating"] != "RED")
-    L = [f"<b>📬 New bids · {today:%d %b %Y}</b>",
+    L = [f"<b>{'✅ Done' if done else '📬 New bids'} · {today:%d %b %Y}</b>",
          f"{len(bids)} new · 🟢 {c['GREEN']} · 🟠 {c['AMBER']} · 🔴 {c['RED']}" + (f" · ⏰ {soon} closing soon" if soon else "")]
     L += [f"⚠️ {html.escape(x[:200])}" for x in failures]
     if not bids and not failures:

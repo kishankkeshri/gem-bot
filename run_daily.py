@@ -133,6 +133,26 @@ def main() -> None:
     bids: list[dict] = []
 
     out_of_region = 0
+    stream = args.send and not REFRESH  # send cards in batches while reading, not after hours of PDFs
+    sent_numbers: set = set()
+    pending: list[dict] = []
+    started = False
+
+    def flush() -> None:
+        nonlocal pending
+        batch = []
+        for b in pending:
+            n = b["f"]("bid_number")
+            if b["best"]["rating"] == "SKIP" or (n and n in sent_numbers):
+                continue
+            sent_numbers.add(n)
+            batch.append(b)
+        batch.sort(key=lambda b: (rules.ORDER[b["best"]["rating"]], b["days_left"] if b["days_left"] is not None else 999))
+        if batch:
+            send_cards(batch, entities, today, failures, closing_days, header=False)
+        pending = []
+
+    rows_by_source: list = []
     for name in (args.source or list(SOURCES)):
         src = SOURCES[name]
         try:
@@ -145,15 +165,20 @@ def main() -> None:
             failures.append(f"{src.NAME}: listing unreachable today ({e.__class__.__name__}: {e})")
             _store(store.source_status, name, str(e)[:500])
             continue
+        rows_by_source.append(rows)
+
+    todo = [r for rows in rows_by_source for r in rows
+            if not (r["listing_end_date"] and r["listing_end_date"] < today)
+            and (args.all or f"{r['source']}:{r['external_id']}" not in seen)]
+    if stream:
+        cards.tg(need("TELEGRAM_BOT_TOKEN"), "sendMessage", chat_id=need("TELEGRAM_CHAT_ID"), parse_mode="HTML",
+                 text=cards.start_message(len(todo), today, failures))
+    for rows in [todo]:
         for row in rows:
             key = f"{row['source']}:{row['external_id']}"
-            if row["listing_end_date"] and row["listing_end_date"] < today:
-                continue
-            if key in seen and not args.all:
-                continue
             if args.limit and len(bids) >= args.limit:
                 break
-            print(f"  [{len(bids) + out_of_region + 1}] {row['external_id']} {row['title'][:50]}", flush=True)
+            print(f"  [{len(bids) + 1}/{len(todo)}] {row['external_id']} {row['title'][:50]}", flush=True)
             try:
                 b = analyse(row, http, entities, today, closing_days)
                 # Never drop: a missed bid costs more than an extra card. Just label it.
@@ -161,10 +186,16 @@ def main() -> None:
                 if not b["region_confirmed"]:
                     out_of_region += 1
                 bids.append(b)
+                pending.append(b)
             except Exception as e:  # noqa: BLE001
                 traceback.print_exc()
                 failures.append(f"{row['external_id']}: could not read document ({e.__class__.__name__})")
             seen.add(key)
+            if stream and len(pending) >= 20:
+                flush()
+                seen_path.write_text(json.dumps(sorted(seen), indent=0))
+    if stream:
+        flush()
 
     if out_of_region:
         print(f"[gem] {out_of_region} bids matched a district name but the delivery PIN isn't confirmed in the region (kept, labelled)")
@@ -185,12 +216,15 @@ def main() -> None:
     text = report.telegram_summary(bids, today, failures, closing_days)
     print(text, f"\n\nExcel: {xlsx}", sep="")
 
-    if args.send:
+    if args.send and REFRESH:
         send_cards(bids, entities, today, failures, closing_days)
+    if stream and bids:  # (nothing new was already said in the start message)
+        cards.tg(need("TELEGRAM_BOT_TOKEN"), "sendMessage", chat_id=need("TELEGRAM_CHAT_ID"), parse_mode="HTML",
+                 text=cards.header(bids, today, failures, closing_days, done=True))
         print("sent to Telegram")
     if args.send:  # a dry run must not mark bids as seen, or the real run would skip them
         seen_path.write_text(json.dumps(sorted(seen), indent=0))
-        print(_store(store.sync_run, bids, state.load()) or "supabase: sync failed (see above)")
+        print(_store(store.sync_run, bids, state.load()) or ("supabase: sync failed (see above)" if store.enabled() else "supabase: off"))
         if not failures and not args.source:  # only a full, clean run counts; otherwise the next trigger retries
             done_path.write_text(today.isoformat())
 
@@ -206,14 +240,15 @@ def _store(fn, *a):
         return None
 
 
-def send_cards(bids: list[dict], entities: list[dict], today: date, failures: list[str], closing_days: int) -> None:
+def send_cards(bids: list[dict], entities: list[dict], today: date, failures: list[str], closing_days: int,
+               header: bool = True) -> None:
     import time as _t
     token, chat = need("TELEGRAM_BOT_TOKEN"), need("TELEGRAM_CHAT_ID")
     by_id = {e["id"]: e for e in entities}
     max_cards = int(os.environ.get("MAX_CARDS", "1000"))  # default: every bid gets a card
     st = state.load()
     failed: list[str] = []
-    if not REFRESH:
+    if header and not REFRESH:
         cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML",
                  text=cards.header(bids, today, failures, closing_days))
     # Every bid gets a card (RED last, already sorted). RED_AS_LIST=1 folds REDs into one summary message.

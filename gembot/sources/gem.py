@@ -25,7 +25,7 @@ from gembot.http import PoliteSession
 
 NAME = "gem"
 BASE = "https://bidplus.gem.gov.in"
-MAX_PAGES_PER_PLACE = 15  # 150 bids per keyword; Dhanbad/Ranchi may need more, raise once measured
+MAX_PAGES_PER_PLACE = 60  # 600 per keyword; 20 Nov: Bokaro had 209, so 150 was cutting bids off
 
 
 def _token(http: PoliteSession) -> str:
