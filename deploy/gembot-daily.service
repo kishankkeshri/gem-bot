@@ -11,7 +11,7 @@ Group=pi
 WorkingDirectory=/home/pi/gem-bot
 ExecStart=/home/pi/gem-bot/.venv/bin/python run_daily.py --send --daily
 # The first GeM pass on a fresh box can take a while; later runs only open new bids.
-TimeoutStartSec=3h
+TimeoutStartSec=6h
 # Shares the Pi with Reach: stay small and polite.
 MemoryMax=500M
 Nice=10
