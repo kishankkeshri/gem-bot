@@ -1,0 +1,22 @@
+# Gem-bot Sunday buying report + backup. Started by gembot-weekly.timer.
+[Unit]
+Description=Gem-bot weekly buying report and backup
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/gem-bot
+ExecStart=/home/pi/gem-bot/.venv/bin/python run_weekly.py --send
+TimeoutStartSec=20min
+MemoryMax=300M
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/pi/gem-bot/data
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gembot-weekly

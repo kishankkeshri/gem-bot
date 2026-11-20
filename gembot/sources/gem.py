@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 import re
 import time
+
+import requests
 from datetime import datetime, timezone
 
 from gembot.http import PoliteSession
@@ -56,6 +58,10 @@ def _first(v):
     return v[0] if isinstance(v, list) and v else v
 
 
+class NoResults(Exception):
+    """GeM answers HTTP 404 (not an empty list) when a keyword matches no ongoing bid (seen 2026-11-20)."""
+
+
 def search(http: PoliteSession, keyword: str, token: str) -> list[dict]:
     docs, page = [], 1
     while page <= MAX_PAGES_PER_PLACE:
@@ -63,9 +69,16 @@ def search(http: PoliteSession, keyword: str, token: str) -> list[dict]:
                    "param": {"searchBid": keyword, "searchType": "fullText"},
                    "filter": {"bidStatusType": "ongoing_bids", "byType": "all", "highBidValue": "",
                               "byEndDate": {"from": "", "to": ""}, "sort": "Bid-Start-Date-Latest"}}
-        r = http.post(f"{BASE}/all-bids-data",
-                      data={"payload": json.dumps(payload), "csrf_bd_gem_nk": token},
-                      headers={"X-Requested-With": "XMLHttpRequest", "Referer": f"{BASE}/all-bids"})
+        try:
+            r = http.post(f"{BASE}/all-bids-data",
+                          data={"payload": json.dumps(payload), "csrf_bd_gem_nk": token},
+                          headers={"X-Requested-With": "XMLHttpRequest", "Referer": f"{BASE}/all-bids"}, retries=0)
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                if page == 1:
+                    raise NoResults(keyword) from None
+                break  # ran past the last page
+            raise
         try:
             data = r.json()
         except ValueError:
@@ -89,12 +102,16 @@ def fetch(http: PoliteSession, places: list[str], failures: "list[str] | None" =
     token = _token(http)
     by_id: dict[str, dict] = {}
     failed: list[str] = []
+    empty = 0
     in_a_row = 0
     for place in places:
         found = None
         for attempt in range(2):
             try:
                 found = search(http, place, token)
+                break
+            except NoResults:
+                found, empty = [], empty + 1
                 break
             except Exception as e:  # noqa: BLE001 - token expiry shows up as 404/403 or a non-JSON page
                 print(f"[gem] {place}: {e.__class__.__name__}: {e} - new token, retrying", flush=True)
@@ -136,6 +153,8 @@ def fetch(http: PoliteSession, places: list[str], failures: "list[str] | None" =
                 "buyer_account": _first(d.get("b.b_created_by")),
                 "qty": _first(d.get("b_total_quantity")),
             }
+    if empty == len(places):  # every keyword "not found" means GeM itself is broken, not that nothing exists
+        raise RuntimeError("every search returned 404 - GeM listing broken today")
     if failed and not by_id:
         raise RuntimeError(f"every search failed ({len(failed)} places)")
     if failed and failures is not None:

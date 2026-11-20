@@ -21,7 +21,7 @@ import warnings
 
 warnings.filterwarnings("ignore", message=".*OpenSSL.*")
 
-from gembot import cards, extract_ai, parse_static, pdf, report, rules, state  # noqa: E402
+from gembot import cards, extract_ai, parse_static, pdf, report, rules, state, store  # noqa: E402
 from gembot.http import PoliteSession
 from gembot.sources import gem, iitism  # noqa: E402
 
@@ -139,9 +139,11 @@ def main() -> None:
             rows = (src.fetch(http, geo["places"] + geo.get("extra_search", []), failures) if name == "gem"
                     else src.fetch(http))
             print(f"[{name}] {len(rows)} listings")
+            _store(store.source_status, name, None)
         except Exception as e:  # noqa: BLE001 - report, never skip silently
             traceback.print_exc()
             failures.append(f"{src.NAME}: listing unreachable today ({e.__class__.__name__}: {e})")
+            _store(store.source_status, name, str(e)[:500])
             continue
         for row in rows:
             key = f"{row['source']}:{row['external_id']}"
@@ -188,8 +190,20 @@ def main() -> None:
         print("sent to Telegram")
     if args.send:  # a dry run must not mark bids as seen, or the real run would skip them
         seen_path.write_text(json.dumps(sorted(seen), indent=0))
+        print(_store(store.sync_run, bids, state.load()) or "supabase: sync failed (see above)")
         if not failures and not args.source:  # only a full, clean run counts; otherwise the next trigger retries
             done_path.write_text(today.isoformat())
+
+
+def _store(fn, *a):
+    """Supabase is the backup copy: a failure there is logged, never fatal."""
+    if not store.enabled():
+        return None
+    try:
+        return fn(*a)
+    except Exception as e:  # noqa: BLE001
+        print(f"[supabase] {fn.__name__} failed: {e}", flush=True)
+        return None
 
 
 def send_cards(bids: list[dict], entities: list[dict], today: date, failures: list[str], closing_days: int) -> None:

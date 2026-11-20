@@ -17,10 +17,11 @@ AI is optional. Bid PDFs follow fixed templates, so static parsing does most of 
 Python 3 · Supabase (Postgres) · Telegram Bot API · systemd timer on a Raspberry Pi 4 · optional Gemini
 
 ## Roadmap
-- [ ] **Phase 1:** first source end to end: scrape, parse PDF, rules, Telegram digest
+- [x] **Phase 1:** IIT (ISM) + GeM end to end: scrape, parse PDF (+OCR), rules, one Telegram card per bid with Watch / Skip / PDF
 - [ ] **Phase 2:** forward a bid PDF or link to the bot for an instant analysis; `/today` `/closing` `/watching`
 - [ ] **Phase 3:** more regional sources, each with a feasibility note (ok / blocked / needs-login)
-- [ ] **Phase 4:** weekly "what gets bought often" report
+- [x] **Phase 4:** Supabase history + Sunday "what gets bought" report with a weekly backup
+- [x] Runs itself on a Pi: 07:30, a 13:30 retry, and catch-up after every boot
 
 ## Setup
 ```bash

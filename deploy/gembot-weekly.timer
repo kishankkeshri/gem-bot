@@ -1,0 +1,10 @@
+[Unit]
+Description=Gem-bot weekly report, Sundays 08:00 IST
+
+[Timer]
+OnCalendar=Sun *-*-* 08:00:00 Asia/Kolkata
+# Pi off on Sunday morning: send it when it is back on.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -28,11 +28,13 @@ mkdir -p "$APP/data" && chown -R pi:pi "$APP/data"
 chmod 600 "$APP/.env" "$APP/config/entities.yaml"
 
 say "Services"
-install -m 644 "$APP"/deploy/gembot-daily.service "$APP"/deploy/gembot-daily.timer "$APP"/deploy/gembot-bot.service /etc/systemd/system/
+install -m 644 "$APP"/deploy/gembot-daily.service "$APP"/deploy/gembot-daily.timer "$APP"/deploy/gembot-bot.service \
+  "$APP"/deploy/gembot-weekly.service "$APP"/deploy/gembot-weekly.timer /etc/systemd/system/
 # The Pi has no clock battery: make time-sync.target wait for a real NTP sync before runs.
 systemctl enable systemd-time-wait-sync.service 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable --now gembot-daily.timer
+systemctl enable --now gembot-weekly.timer
 systemctl enable gembot-bot.service
 systemctl restart gembot-bot.service
 

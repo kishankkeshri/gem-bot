@@ -17,7 +17,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-from gembot import state
+from gembot import state, store
 from gembot.cards import keyboard, tg
 
 ROOT = Path(__file__).resolve().parent
@@ -39,6 +39,10 @@ def on_button(q: dict) -> None:
         new = {"w": "watch", "s": "skip"}[action]
         bid["status"] = "new" if bid.get("status") == new else new  # tap again to undo
         state.save(st)
+        try:
+            store.set_status(bid.get("key", ""), bid["status"])
+        except Exception as e:  # noqa: BLE001 - the chat still works if Supabase is down
+            print("supabase status sync failed:", e, flush=True)
         tg(TOKEN, "answerCallbackQuery", callback_query_id=q["id"],
            text={"watch": "Added to watch list ⭐", "skip": "Skipped", "new": "Undone"}[bid["status"]])
         tg(TOKEN, "editMessageReplyMarkup", chat_id=CHAT, message_id=msg.get("message_id"),
