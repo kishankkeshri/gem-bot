@@ -1,25 +1,13 @@
-# Region filter.
+# Region filter - DHANBAD ONLY for now (20 Nov 2026: the 53-place run sent ~700 cards a day, too many).
 #   places        - searched on GeM AND used to confirm a bid's delivery address is in the region
 #   extra_search  - searched on GeM only (buyer names); the delivery PIN still decides "confirmed"
 #   pin_prefixes  - a consignee PIN starting with one of these confirms the region
-# Each extra name costs one GeM search request (+1 per extra page of hits) on the daily run.
+#   drop_outside  - true: a GeM bid whose delivery PIN is known and outside the region gets no card
+#                   (bids with no PIN in the document are still sent, labelled)
+# To widen later, move names back from `later:` into places / extra_search and add their PIN prefixes.
 
 places:
-  # districts
   - Dhanbad
-  - Bokaro
-  - Giridih
-  - Deoghar
-  - Dumka
-  - Jamtara
-  - Godda
-  - Pakur
-  - Sahibganj
-  - Jamshedpur
-  - Hazaribagh
-  - Ramgarh
-  - Ranchi
-  # Dhanbad district towns / coalfield areas
   - Jharia
   - Sindri
   - Nirsa
@@ -30,42 +18,19 @@ places:
   - Kusunda
   - Maithon
   - Panchet
-  # Bokaro district
-  - Chas
-  - Bermo
-  - Phusro
-  - Chandrapura
-  - Tenughat
-  - Kathara
-  # Giridih / Deoghar / Dumka / Jamtara / Godda / Sahibganj
-  - Madhupur
-  - Jasidih
-  - Mihijam
-  - Rajmahal
-  - Lalmatia
-  - Barharwa
-  # Hazaribagh / Ramgarh
-  - Patratu
-  - Bhurkunda
-  - Barkagaon
-  # East Singhbhum
-  - Adityapur
-  - Gamharia
-  - Ghatshila
-  - Jaduguda
 
 extra_search:
-  # big regional buyers (as GeM shows department / organisation names)
-  - Bharat Coking Coal
-  - Central Coalfields
-  - Eastern Coalfields
-  - Central Mine Planning
-  - Damodar Valley Corporation
-  - Bokaro Steel
-  - Hindustan Urvarak
-  - Uranium Corporation
-  - Heavy Engineering Corporation
-  - Patratu Vidyut
-  - CIMFR
+  - Bharat Coking Coal   # HQ Koyla Bhawan, Dhanbad
+  - CIMFR                # Barwa Road, Dhanbad
 
-pin_prefixes: ["813", "814", "815", "816", "825", "826", "827", "828", "829", "831", "832", "834", "835"]
+pin_prefixes: ["826", "828"]
+drop_outside: true
+
+later:
+  places: [Bokaro, Giridih, Deoghar, Dumka, Jamtara, Godda, Pakur, Sahibganj, Jamshedpur, Hazaribagh,
+           Ramgarh, Ranchi, Chas, Bermo, Phusro, Chandrapura, Tenughat, Kathara, Madhupur, Jasidih,
+           Mihijam, Rajmahal, Lalmatia, Barharwa, Patratu, Bhurkunda, Barkagaon, Adityapur, Gamharia,
+           Ghatshila, Jaduguda]
+  extra_search: [Central Coalfields, Eastern Coalfields, Central Mine Planning, Damodar Valley Corporation,
+                 Bokaro Steel, Hindustan Urvarak, Uranium Corporation, Heavy Engineering Corporation, Patratu Vidyut]
+  pin_prefixes: ["813", "814", "815", "816", "825", "827", "829", "831", "832", "834", "835"]

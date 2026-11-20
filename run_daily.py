@@ -185,6 +185,10 @@ def main() -> None:
                 b["region_confirmed"] = in_region(b["facts"], row, geo)
                 if not b["region_confirmed"]:
                     out_of_region += 1
+                    if geo.get("drop_outside") and b["facts"].get("consignee_pin"):  # delivered elsewhere: no card
+                        print(f"    outside region (PIN {b['f']('consignee_pin')}) - no card", flush=True)
+                        seen.add(key)
+                        continue
                 bids.append(b)
                 pending.append(b)
             except Exception as e:  # noqa: BLE001
