@@ -12,6 +12,7 @@ import html
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import requests
@@ -27,12 +28,31 @@ CHAT = str(os.environ.get("TELEGRAM_CHAT_ID") or sys.exit("TELEGRAM_CHAT_ID not 
 UA = os.environ.get("HTTP_USER_AGENT", "GemBot/0.1")
 
 
+PDF_WORKERS = ThreadPoolExecutor(max_workers=2)  # uploads run here so taps never queue behind them
+ACK_WORKERS = ThreadPoolExecutor(max_workers=4)
+PDF_REPEAT_SECONDS = 300  # a second PDF tap on the same bid within this window is ignored
+_pdf_last: dict[str, float] = {}
+
+
+def _ack(q: dict, text: str) -> None:
+    """The little toast on a tap, sent in the background with a short timeout: it must never hold up
+    the next tap, and Telegram expires it after ~15 s anyway."""
+    def go():
+        try:
+            requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery",
+                          data={"callback_query_id": q["id"], "text": text}, timeout=8)
+        except Exception as e:  # noqa: BLE001 - never put the token-bearing URL in the log
+            print(f"  (toast skipped: {e.__class__.__name__})", flush=True)
+    ACK_WORKERS.submit(go)
+
+
 def on_button(q: dict) -> None:
     action, _, sid = q.get("data", "").partition(":")
     st = state.load()
     bid = st["bids"].get(sid)
+    print(f"tap {action}:{sid} {(bid or {}).get('key', '?')} {(bid or {}).get('title', '')[:50]}", flush=True)
     if not bid:
-        tg(TOKEN, "answerCallbackQuery", callback_query_id=q["id"], text="Bid not found (older than the store)")
+        _ack(q, "Bid not found (older than the store)")
         return
     msg = q.get("message", {})
     if action in ("w", "s"):
@@ -43,24 +63,56 @@ def on_button(q: dict) -> None:
             store.set_status(bid.get("key", ""), bid["status"])
         except Exception as e:  # noqa: BLE001 - the chat still works if Supabase is down
             print("supabase status sync failed:", e, flush=True)
-        tg(TOKEN, "answerCallbackQuery", callback_query_id=q["id"],
-           text={"watch": "Added to watch list ⭐", "skip": "Skipped", "new": "Undone"}[bid["status"]])
+        _ack(q, {"watch": "Added to watch list ⭐", "skip": "Skipped", "new": "Undone"}[bid["status"]])
         tg(TOKEN, "editMessageReplyMarkup", chat_id=CHAT, message_id=msg.get("message_id"),
            reply_markup=keyboard(sid, bid["status"]))
     elif action == "p":
-        tg(TOKEN, "answerCallbackQuery", callback_query_id=q["id"], text="Sending the document…")
-        pdf = Path(bid["pdf"]) if bid.get("pdf") else None
-        if not (pdf and pdf.exists()) and bid.get("doc_url"):
-            pdf = ROOT / "data" / "pdfs" / f"{sid}.pdf"
+        now = time.time()
+        if now - _pdf_last.get(sid, 0) < PDF_REPEAT_SECONDS:
+            _ack(q, "Already sent – scroll down for the PDF")
+            print("  repeat tap ignored", flush=True)
+            return
+        _pdf_last[sid] = now
+        _ack(q, "Sending the document…")
+        PDF_WORKERS.submit(send_pdf, sid, dict(bid), msg.get("message_id"))
+
+
+def send_pdf(sid: str, bid: dict, reply_to) -> None:
+    """Every PDF tap ends in the PDF, or in a message with the bid number and link - never in silence."""
+    label = bid["key"].split(":", 1)[-1]
+    try:
+        pdfs = ROOT / "data" / "pdfs"
+        candidates = [Path(bid["pdf"]) if bid.get("pdf") else None,  # the path may be another machine's
+                      pdfs / Path(bid["pdf"]).name if bid.get("pdf") else None, pdfs / f"{sid}.pdf"]
+        pdf = next((p for p in candidates if p and p.exists()), None)
+        if pdf is None and bid.get("doc_url"):
+            pdf = pdfs / f"{sid}.pdf"
             pdf.parent.mkdir(parents=True, exist_ok=True)
-            pdf.write_bytes(requests.get(bid["doc_url"], headers={"User-Agent": UA}, timeout=60).content)
-        if pdf and pdf.exists():
-            name = "".join(c if c.isalnum() or c in "-_" else "_" for c in bid["key"].split(":", 1)[-1]) + ".pdf"
-            with open(pdf, "rb") as fh:
-                tg(TOKEN, "sendDocument", chat_id=CHAT, reply_to_message_id=msg.get("message_id"),
-                   caption=bid["title"][:200], files={"document": (name, fh, "application/pdf")})
-        else:
-            tg(TOKEN, "sendMessage", chat_id=CHAT, text="No PDF for this bid - open the portal link.")
+            r = requests.get(bid["doc_url"], headers={"User-Agent": UA}, timeout=60)
+            r.raise_for_status()
+            pdf.write_bytes(r.content)
+        if pdf is None:
+            raise FileNotFoundError("no document link")
+        name = "".join(c if c.isalnum() or c in "-_" else "_" for c in label) + ".pdf"
+        data = pdf.read_bytes()
+        last = None
+        for attempt in range(3):
+            try:
+                tg(TOKEN, "sendDocument", chat_id=CHAT, reply_to_message_id=reply_to, allow_sending_without_reply="true",
+                   caption=bid["title"][:200], files={"document": (name, data, "application/pdf")})
+                print(f"  pdf sent {label}", flush=True)
+                return
+            except Exception as e:  # noqa: BLE001
+                last = e
+                time.sleep(3 * (attempt + 1))
+        raise last
+    except Exception as e:  # noqa: BLE001
+        print(f"  pdf FAILED {label}: {e}", flush=True)
+        try:
+            tg(TOKEN, "sendMessage", chat_id=CHAT, reply_to_message_id=reply_to, allow_sending_without_reply="true",
+               text=f"⚠️ Could not attach the PDF for {label} ({bid['title'][:60]}). Open it here: {bid.get('doc_url') or 'portal'}")
+        except Exception as e2:  # noqa: BLE001
+            print(f"  could not even send the fallback for {label}: {e2}", flush=True)
 
 
 def on_message(m: dict) -> None:
