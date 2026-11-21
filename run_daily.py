@@ -257,7 +257,8 @@ def send_cards(bids: list[dict], entities: list[dict], today: date, failures: li
                  text=cards.header(bids, today, failures, closing_days))
     # Every bid gets a card (RED last, already sorted). RED_AS_LIST=1 folds REDs into one summary message.
     red_as_list = os.environ.get("RED_AS_LIST", "0") == "1"
-    worth = [b for b in bids if not (red_as_list and b["best"]["rating"] == "RED")]
+    hide_red = os.environ.get("HIDE_RED", "0") == "1"  # only bids you might be eligible for get a card
+    worth = [b for b in bids if not ((red_as_list or hide_red) and b["best"]["rating"] == "RED")]
     for b in worth[:max_cards]:
         key = f"{b['row']['source']}:{b['row']['external_id']}"
         sid = state.short_id(key)
@@ -286,7 +287,7 @@ def send_cards(bids: list[dict], entities: list[dict], today: date, failures: li
     if len(worth) > max_cards:
         cards.tg(token, "sendMessage", chat_id=chat, text=f"… {len(worth) - max_cards} more bids not shown (MAX_CARDS={max_cards}).")
     reds = [b for b in bids if b["best"]["rating"] == "RED"]
-    if reds and red_as_list and not REFRESH:
+    if reds and red_as_list and not hide_red and not REFRESH:
         for text in cards.red_list(reds):
             cards.tg(token, "sendMessage", chat_id=chat, parse_mode="HTML", disable_web_page_preview="true", text=text)
             _t.sleep(1.1)
